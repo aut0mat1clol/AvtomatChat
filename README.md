@@ -30,7 +30,7 @@
 
 ## Скриншот работы
 
-<img width="640" height="620" alt="image" src="https://github.com/user-attachments/assets/6a6e1746-a0ba-4ef3-b6da-aca320dbd2c1" />
+<img width="1149" height="653" alt="image" src="https://github.com/user-attachments/assets/106222a0-d1bb-44a0-b648-b7ffd700c7e7" />
 
 ## Требования
 
