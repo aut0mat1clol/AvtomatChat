@@ -239,7 +239,16 @@
                           ToolTip="Звук пойдёт из браузерного источника OBS — попадёт в микс стрима"/>
 
                 <TextBlock Text="Голос:" Margin="0,10,0,4" Foreground="{StaticResource MutedBrush}"/>
-                <ComboBox x:Name="VoiceCombo" SelectionChanged="VoiceCombo_SelectionChanged"/>
+                <ComboBox x:Name="VoiceCombo" SelectionChanged="VoiceCombo_SelectionChanged">
+                    <ComboBox.ItemTemplate>
+                        <!-- Явный тёмный текст: элементы теперь объекты (VoiceItem), и на их
+                             автосозданные TextBlock действует глобальный светлый стиль,
+                             а фон выпадающего списка системный белый -->
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Foreground="#FF0E0E10"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
 
                 <TextBlock Margin="0,10,0,4" Foreground="{StaticResource MutedBrush}">
                     <Run Text="Скорость: "/><Run x:Name="RateLabel" Text="0"/>

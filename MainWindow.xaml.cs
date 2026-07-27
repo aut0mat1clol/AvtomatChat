@@ -26,9 +26,11 @@ public partial class MainWindow : Window
 
         if (_tts.IsAvailable)
         {
-            // Голоса
-            var voices = _tts.GetVoices();
-            foreach (var v in voices) VoiceCombo.Items.Add(v);
+            // Голоса с пометкой языков: «Имя [RU]», «Имя [RU/EN]»
+            var details = _tts.GetVoiceDetails();
+            var voices = details.Select(d => d.Name).ToList();
+            foreach (var (name, langs) in details)
+                VoiceCombo.Items.Add(new VoiceItem(name, langs));
 
             // Сначала пробуем сохранённый голос, иначе — русский по умолчанию
             string? preferred = null;
@@ -37,7 +39,9 @@ public partial class MainWindow : Window
             preferred ??= voices.FirstOrDefault(v => v.Contains("Russian", StringComparison.OrdinalIgnoreCase)
                                                   || v.Contains("Irina", StringComparison.OrdinalIgnoreCase)
                                                   || v.Contains("Pavel", StringComparison.OrdinalIgnoreCase));
-            VoiceCombo.SelectedItem = preferred ?? voices.FirstOrDefault();
+            preferred ??= voices.FirstOrDefault();
+            VoiceCombo.SelectedItem = VoiceCombo.Items.Cast<VoiceItem>()
+                .FirstOrDefault(i => i.Name == preferred);
         }
         else
         {
@@ -210,10 +214,17 @@ public partial class MainWindow : Window
             _tts.ClearQueue();
     }
 
+    /// <summary>Элемент списка голосов: имя + пометка языков («RU», «RU/EN»).</summary>
+    private sealed record VoiceItem(string Name, string Languages)
+    {
+        public override string ToString() =>
+            string.IsNullOrEmpty(Languages) ? Name : $"{Name}  [{Languages}]";
+    }
+
     private void VoiceCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        if (VoiceCombo.SelectedItem is string name)
-            _tts.SetVoice(name);
+        if (VoiceCombo.SelectedItem is VoiceItem item)
+            _tts.SetVoice(item.Name);
     }
 
     private void RateSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -277,7 +288,7 @@ public partial class MainWindow : Window
         _settings.UseTrigger = TriggerCheck.IsChecked == true;
         _settings.TriggerText = TriggerBox.Text;
         _settings.IgnoredUsers = IgnoredUsersBox.Text;
-        _settings.VoiceName = VoiceCombo.SelectedItem as string;
+        _settings.VoiceName = (VoiceCombo.SelectedItem as VoiceItem)?.Name;
         _settings.Rate = (int)RateSlider.Value;
         _settings.Volume = (int)VolumeSlider.Value;
         _settings.PlayLocal = PlayLocalCheck.IsChecked == true;

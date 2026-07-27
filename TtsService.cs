@@ -104,6 +104,67 @@ public class TtsService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Голоса с пометкой языков («RU», «EN», «RU/EN»).
+    /// SAPI хранит языки в атрибуте Language как hex-LCID через «;»
+    /// (например «419;409» у RHVoice = русский + английский).
+    /// </summary>
+    public IReadOnlyList<(string Name, string Languages)> GetVoiceDetails()
+    {
+        if (_synth == null) return Array.Empty<(string, string)>();
+        try
+        {
+            return _synth.GetInstalledVoices()
+                         .Where(v => v.Enabled)
+                         .Select(v => (v.VoiceInfo.Name, GetLanguages(v.VoiceInfo)))
+                         .ToList();
+        }
+        catch
+        {
+            return Array.Empty<(string, string)>();
+        }
+    }
+
+    private static string GetLanguages(System.Speech.Synthesis.VoiceInfo info)
+    {
+        var codes = new List<string>();
+
+        // Атрибут Language: hex-LCID через ";" — так голос может объявить несколько языков
+        try
+        {
+            if (info.AdditionalInfo.TryGetValue("Language", out var raw) && !string.IsNullOrWhiteSpace(raw))
+            {
+                foreach (var part in raw.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    if (int.TryParse(part, System.Globalization.NumberStyles.HexNumber, null, out var lcid))
+                    {
+                        try
+                        {
+                            var code = new System.Globalization.CultureInfo(lcid)
+                                .TwoLetterISOLanguageName.ToUpperInvariant();
+                            if (!codes.Contains(code)) codes.Add(code);
+                        }
+                        catch { /* неизвестный LCID — пропускаем */ }
+                    }
+                }
+            }
+        }
+        catch { }
+
+        // Запасной вариант — культура голоса
+        if (codes.Count == 0)
+        {
+            try
+            {
+                var code = info.Culture?.TwoLetterISOLanguageName.ToUpperInvariant();
+                if (!string.IsNullOrEmpty(code)) codes.Add(code);
+            }
+            catch { }
+        }
+
+        return string.Join("/", codes);
+    }
+
     public void SetVoice(string name)
     {
         try { _synth?.SelectVoice(name); } catch { /* голос недоступен — оставляем текущий */ }
