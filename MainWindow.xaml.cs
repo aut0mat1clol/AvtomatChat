@@ -17,44 +17,35 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly DispatcherTimer _queueTimer;
     private bool _connected;
-    private bool _initialized; // защита от событий XAML во время InitializeComponent
+    private SettingsWindow? _settingsWindow;
 
     public MainWindow()
     {
         InitializeComponent();
         ChatList.ItemsSource = _messages;
 
-        if (_tts.IsAvailable)
+        if (!_tts.IsAvailable)
         {
-            // Голоса с пометкой языков: «Имя [RU]», «Имя [RU/EN]»
-            var details = _tts.GetVoiceDetails();
-            var voices = details.Select(d => d.Name).ToList();
-            foreach (var (name, langs) in details)
-                VoiceCombo.Items.Add(new VoiceItem(name, langs));
-
-            // Сначала пробуем сохранённый голос, иначе — русский по умолчанию
-            string? preferred = null;
-            if (!string.IsNullOrEmpty(_settings.VoiceName) && voices.Contains(_settings.VoiceName))
-                preferred = _settings.VoiceName;
-            preferred ??= voices.FirstOrDefault(v => v.Contains("Russian", StringComparison.OrdinalIgnoreCase)
-                                                  || v.Contains("Irina", StringComparison.OrdinalIgnoreCase)
-                                                  || v.Contains("Pavel", StringComparison.OrdinalIgnoreCase));
-            preferred ??= voices.FirstOrDefault();
-            VoiceCombo.SelectedItem = VoiceCombo.Items.Cast<VoiceItem>()
-                .FirstOrDefault(i => i.Name == preferred);
-        }
-        else
-        {
-            // TTS не завёлся — работаем как просмотрщик чата
-            TtsEnabledCheck.IsChecked = false;
-            TtsPanel.IsEnabled = false;
+            _settings.TtsEnabled = false;
             StatusLabel.Text = "TTS недоступен: " + (_tts.InitError ?? "неизвестная ошибка");
+        }
+        else if (string.IsNullOrEmpty(_settings.VoiceName))
+        {
+            // Первый запуск — выбираем русский голос по умолчанию
+            var voices = _tts.GetVoices();
+            _settings.VoiceName =
+                voices.FirstOrDefault(v => v.Contains("Russian", StringComparison.OrdinalIgnoreCase)
+                                        || v.Contains("Irina", StringComparison.OrdinalIgnoreCase)
+                                        || v.Contains("Pavel", StringComparison.OrdinalIgnoreCase))
+                ?? voices.FirstOrDefault();
         }
 
         // События IRC (приходят из фонового потока — маршалим в UI)
         _irc.MessageReceived += msg => Dispatcher.Invoke(() => OnChatMessage(msg));
         _irc.StatusChanged += s => Dispatcher.Invoke(() => StatusLabel.Text = s);
         _irc.RoomIdResolved += roomId => _ = _7tv.LoadChannelAsync(roomId); // эмоуты канала 7TV
+        _irc.UserJoined += user => Dispatcher.Invoke(() => OnUserPresence(user, joined: true));
+        _irc.UserLeft += user => Dispatcher.Invoke(() => OnUserPresence(user, joined: false));
         _irc.ConnectionFailed += ex => Dispatcher.Invoke(() =>
         {
             StatusLabel.Text = "Ошибка соединения: " + ex.Message;
@@ -70,43 +61,40 @@ public partial class MainWindow : Window
         _queueTimer.Tick += (_, _) => QueueLabel.Text = $"В очереди: {_tts.QueueCount}";
         _queueTimer.Start();
 
-        // Восстанавливаем сохранённые настройки в контролы
-        // (_initialized ещё false, поэтому события Checked/ValueChanged игнорируются)
+        // Применяем сохранённые настройки
         ChannelBox.Text = _settings.Channel;
-        TtsEnabledCheck.IsChecked = _settings.TtsEnabled && _tts.IsAvailable;
-        SpeakNameCheck.IsChecked = _settings.SpeakUsername;
-        SkipCommandsCheck.IsChecked = _settings.SkipCommands;
-        StripLinksCheck.IsChecked = _settings.StripLinks;
-        SkipEmotesCheck.IsChecked = _settings.SkipEmotes;
-        TriggerCheck.IsChecked = _settings.UseTrigger;
-        TriggerBox.Text = _settings.TriggerText;
-        IgnoredUsersBox.Text = _settings.IgnoredUsers;
-        _tts.SetIgnoredUsers(_settings.IgnoredUsers);
-        PlayLocalCheck.IsChecked = _settings.PlayLocal;
-        PlayObsCheck.IsChecked = _settings.PlayInObs;
-        RateSlider.Value = Math.Clamp(_settings.Rate, -10, 10);
-        RateLabel.Text = ((int)RateSlider.Value).ToString();
-        VolumeSlider.Value = Math.Clamp(_settings.Volume, 0, 100);
-        VolumeLabel.Text = ((int)VolumeSlider.Value).ToString();
-        ObsCheck.IsChecked = _settings.ObsServerEnabled;
-        // Восстанавливаем масштаб чата (без вывода в статусную строку при старте)
         _chatZoom = Math.Clamp(_settings.ChatZoom, 0.5, 3.0);
         ChatZoomTransform.ScaleX = _chatZoom;
         ChatZoomTransform.ScaleY = _chatZoom;
-        _tts.SetRate((int)RateSlider.Value);
-        _tts.SetVolume((int)VolumeSlider.Value);
+        ApplySettingsToServices();
 
-        // Конструктор завершён — теперь события настроек можно обрабатывать
-        _initialized = true;
-        TtsSettings_Changed(this, new RoutedEventArgs()); // применяем начальные значения чекбоксов
-
-        // OBS-оверлей
-        ObsUrlBox.Text = _obs.Url;
         if (_settings.ObsServerEnabled)
             StartObsServer();
 
         // Озвучка в OBS: готовые WAV-клипы отдаём серверу оверлея
         _tts.ObsSpeechReady += wav => _obs.AddSpeech(wav);
+    }
+
+    /// <summary>Применяет _settings к TTS и прочим сервисам.</summary>
+    private void ApplySettingsToServices()
+    {
+        _tts.Enabled = _settings.TtsEnabled && _tts.IsAvailable;
+        _tts.SpeakUsername = _settings.SpeakUsername;
+        _tts.SkipCommands = _settings.SkipCommands;
+        _tts.StripLinks = _settings.StripLinks;
+        _tts.SkipEmotes = _settings.SkipEmotes;
+        _tts.UseTrigger = _settings.UseTrigger;
+        _tts.TriggerText = _settings.TriggerText;
+        _tts.SetIgnoredUsers(_settings.IgnoredUsers);
+        _tts.PlayLocal = _settings.PlayLocal;
+        _tts.PlayInObs = _settings.PlayInObs;
+        _tts.SetRate(Math.Clamp(_settings.Rate, -10, 10));
+        _tts.SetVolume(Math.Clamp(_settings.Volume, 0, 100));
+        if (!string.IsNullOrEmpty(_settings.VoiceName))
+            _tts.SetVoice(_settings.VoiceName);
+
+        if (!_tts.Enabled)
+            _tts.ClearQueue();
     }
 
     private void StartObsServer()
@@ -118,16 +106,139 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             // Порт занят или HttpListener недоступен — работаем без оверлея
-            ObsCheck.IsChecked = false;
+            _settings.ObsServerEnabled = false;
             StatusLabel.Text = "OBS-сервер не запустился: " + ex.Message;
         }
     }
+
+    // ---------- Окно настроек ----------
+
+    private void SettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_settingsWindow != null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+        _settingsWindow = new SettingsWindow(this);
+        _settingsWindow.Show();
+    }
+
+    /// <summary>Заполняет контролы окна настроек текущими значениями.</summary>
+    public void FillSettingsWindow(SettingsWindow w)
+    {
+        w.TtsEnabledCheck.IsChecked = _settings.TtsEnabled && _tts.IsAvailable;
+        w.TtsEnabledCheck.IsEnabled = _tts.IsAvailable;
+        w.SpeakNameCheck.IsChecked = _settings.SpeakUsername;
+        w.SkipCommandsCheck.IsChecked = _settings.SkipCommands;
+        w.StripLinksCheck.IsChecked = _settings.StripLinks;
+        w.SkipEmotesCheck.IsChecked = _settings.SkipEmotes;
+        w.TriggerCheck.IsChecked = _settings.UseTrigger;
+        w.TriggerBox.Text = _settings.TriggerText;
+        w.TriggerBox.IsEnabled = _settings.UseTrigger;
+        w.IgnoredUsersBox.Text = _settings.IgnoredUsers;
+        w.PlayLocalCheck.IsChecked = _settings.PlayLocal;
+        w.PlayObsCheck.IsChecked = _settings.PlayInObs;
+        w.RateSlider.Value = Math.Clamp(_settings.Rate, -10, 10);
+        w.RateLabel.Text = ((int)w.RateSlider.Value).ToString();
+        w.VolumeSlider.Value = Math.Clamp(_settings.Volume, 0, 100);
+        w.VolumeLabel.Text = ((int)w.VolumeSlider.Value).ToString();
+        w.ShowJoinsLocalCheck.IsChecked = _settings.ShowJoinsLocal;
+        w.ShowJoinsObsCheck.IsChecked = _settings.ShowJoinsObs;
+        w.ObsCheck.IsChecked = _settings.ObsServerEnabled;
+        w.ObsUrlBox.Text = _obs.Url;
+
+        // Голоса с пометкой языков: «Имя [RU]», «Имя [RU/EN]»
+        w.VoiceCombo.Items.Clear();
+        foreach (var (name, langs) in _tts.GetVoiceDetails())
+            w.VoiceCombo.Items.Add(new SettingsWindow.VoiceItem(name, langs));
+        w.VoiceCombo.SelectedItem = w.VoiceCombo.Items.Cast<SettingsWindow.VoiceItem>()
+            .FirstOrDefault(i => i.Name == _settings.VoiceName);
+        w.VoiceCombo.IsEnabled = _tts.IsAvailable;
+    }
+
+    /// <summary>Считывает контролы окна настроек в _settings и применяет к сервисам.</summary>
+    public void ApplySettingsFromWindow(SettingsWindow w)
+    {
+        _settings.TtsEnabled = w.TtsEnabledCheck.IsChecked == true;
+        _settings.SpeakUsername = w.SpeakNameCheck.IsChecked == true;
+        _settings.SkipCommands = w.SkipCommandsCheck.IsChecked == true;
+        _settings.StripLinks = w.StripLinksCheck.IsChecked == true;
+        _settings.SkipEmotes = w.SkipEmotesCheck.IsChecked == true;
+        _settings.UseTrigger = w.TriggerCheck.IsChecked == true;
+        _settings.TriggerText = w.TriggerBox.Text;
+        w.TriggerBox.IsEnabled = _settings.UseTrigger;
+        _settings.IgnoredUsers = w.IgnoredUsersBox.Text;
+        _settings.PlayLocal = w.PlayLocalCheck.IsChecked == true;
+        _settings.PlayInObs = w.PlayObsCheck.IsChecked == true;
+        _settings.Rate = (int)w.RateSlider.Value;
+        _settings.Volume = (int)w.VolumeSlider.Value;
+        _settings.ShowJoinsLocal = w.ShowJoinsLocalCheck.IsChecked == true;
+        _settings.ShowJoinsObs = w.ShowJoinsObsCheck.IsChecked == true;
+        _settings.ObsServerEnabled = w.ObsCheck.IsChecked == true;
+        if (w.VoiceCombo.SelectedItem is SettingsWindow.VoiceItem item)
+            _settings.VoiceName = item.Name;
+
+        ApplySettingsToServices();
+    }
+
+    public void ToggleObsServer(bool enabled)
+    {
+        if (enabled) StartObsServer();
+        else _obs.Stop();
+    }
+
+    public void SpeakTestPhrase()
+    {
+        // Если включён режим триггера — добавляем триггер, чтобы тест точно прозвучал
+        var suffix = _tts.UseTrigger ? " " + _tts.TriggerText : "";
+        _tts.EnqueueMessage(new ChatMessage
+        {
+            Username = "Тест",
+            Text = "Проверка озвучки чата. Раз, два, три!" + suffix
+        });
+    }
+
+    public void OnSettingsWindowClosed(SettingsWindow w)
+    {
+        ApplySettingsFromWindow(w);
+        _settings.Save();
+        _settingsWindow = null;
+    }
+
+    // ---------- Чат ----------
 
     private void OnChatMessage(ChatMessage msg)
     {
         // Разбиваем текст на части (текст/эмоуты 7TV) для отрисовки и оверлея
         msg.Parts = _7tv.Tokenize(msg.Text);
 
+        AddToChat(msg);
+        _obs.AddMessage(msg);
+        _tts.EnqueueMessage(msg);
+    }
+
+    /// <summary>Событие входа/выхода зрителя (JOIN/PART из IRC).</summary>
+    private void OnUserPresence(string user, bool joined)
+    {
+        if (!_settings.ShowJoinsLocal) return;
+
+        var msg = new ChatMessage
+        {
+            Username = user,
+            Text = joined ? "зашёл в чат" : "вышел из чата",
+            IsSystem = true,
+        };
+
+        AddToChat(msg);
+
+        if (_settings.ShowJoinsObs)
+            _obs.AddMessage(msg);
+        // TTS такие события не озвучивает
+    }
+
+    private void AddToChat(ChatMessage msg)
+    {
         _messages.Add(msg);
         while (_messages.Count > MaxMessages)
             _messages.RemoveAt(0);
@@ -135,9 +246,6 @@ public partial class MainWindow : Window
         // Автопрокрутка вниз
         if (ChatList.Items.Count > 0)
             ChatList.ScrollIntoView(ChatList.Items[^1]);
-
-        _obs.AddMessage(msg);
-        _tts.EnqueueMessage(msg);
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -164,7 +272,8 @@ public partial class MainWindow : Window
             _7tv.ClearChannelEmotes(); // эмоуты прошлого канала больше не нужны
             await _irc.ConnectAsync(channel);
             SetConnectedState(true);
-            SaveSettings(); // запоминаем канал сразу после успешного подключения
+            _settings.Channel = channel;
+            _settings.Save(); // запоминаем канал сразу после успешного подключения
         }
         catch (Exception ex)
         {
@@ -190,113 +299,18 @@ public partial class MainWindow : Window
             ConnectButton_Click(sender, new RoutedEventArgs());
     }
 
-    // ---------- Настройки TTS ----------
-
-    private void TtsSettings_Changed(object sender, RoutedEventArgs e)
-    {
-        // Событие Checked срабатывает ещё во время загрузки XAML,
-        // когда часть контролов и полей ещё не создана — игнорируем до конца конструктора.
-        if (!_initialized) return;
-
-        _tts.Enabled = TtsEnabledCheck.IsChecked == true;
-        _tts.SpeakUsername = SpeakNameCheck.IsChecked == true;
-        _tts.SkipCommands = SkipCommandsCheck.IsChecked == true;
-        _tts.StripLinks = StripLinksCheck.IsChecked == true;
-        _tts.SkipEmotes = SkipEmotesCheck.IsChecked == true;
-        _tts.UseTrigger = TriggerCheck.IsChecked == true;
-        _tts.TriggerText = TriggerBox.Text;
-        TriggerBox.IsEnabled = _tts.UseTrigger;
-
-        _tts.PlayLocal = PlayLocalCheck.IsChecked == true;
-        _tts.PlayInObs = PlayObsCheck.IsChecked == true;
-
-        if (!_tts.Enabled)
-            _tts.ClearQueue();
-    }
-
-    /// <summary>Элемент списка голосов: имя + пометка языков («RU», «RU/EN»).</summary>
-    private sealed record VoiceItem(string Name, string Languages)
-    {
-        public override string ToString() =>
-            string.IsNullOrEmpty(Languages) ? Name : $"{Name}  [{Languages}]";
-    }
-
-    private void VoiceCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-    {
-        if (VoiceCombo.SelectedItem is VoiceItem item)
-            _tts.SetVoice(item.Name);
-    }
-
-    private void RateSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (!_initialized) return;
-        var rate = (int)e.NewValue;
-        RateLabel.Text = rate.ToString();
-        _tts.SetRate(rate);
-    }
-
-    private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (!_initialized) return;
-        var vol = (int)e.NewValue;
-        VolumeLabel.Text = vol.ToString();
-        _tts.SetVolume(vol);
-    }
-
     private void SkipButton_Click(object sender, RoutedEventArgs e) => _tts.SkipCurrent();
-
-    private void TriggerBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        if (!_initialized) return;
-        _tts.TriggerText = TriggerBox.Text;
-    }
-
-    private void IgnoredUsersBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        if (!_initialized) return;
-        _tts.SetIgnoredUsers(IgnoredUsersBox.Text);
-    }
-
-    private void ObsCheck_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!_initialized) return;
-        if (ObsCheck.IsChecked == true) StartObsServer();
-        else _obs.Stop();
-    }
 
     private void ClearQueueButton_Click(object sender, RoutedEventArgs e) => _tts.ClearQueue();
 
-    private void TestButton_Click(object sender, RoutedEventArgs e)
+    private void ClearChatButton_Click(object sender, RoutedEventArgs e)
     {
-        // Если включён режим триггера — добавляем триггер, чтобы тест точно прозвучал
-        var suffix = _tts.UseTrigger ? " " + _tts.TriggerText : "";
-        _tts.EnqueueMessage(new ChatMessage
-        {
-            Username = "Тест",
-            Text = "Проверка озвучки чата. Раз, два, три!" + suffix
-        });
+        _messages.Clear();     // окно приложения
+        _obs.Clear();          // OBS-оверлей
+        StatusLabel.Text = "Чат очищен";
     }
 
-    private void SaveSettings()
-    {
-        _settings.Channel = ChannelBox.Text.Trim();
-        _settings.TtsEnabled = TtsEnabledCheck.IsChecked == true;
-        _settings.SpeakUsername = SpeakNameCheck.IsChecked == true;
-        _settings.SkipCommands = SkipCommandsCheck.IsChecked == true;
-        _settings.StripLinks = StripLinksCheck.IsChecked == true;
-        _settings.SkipEmotes = SkipEmotesCheck.IsChecked == true;
-        _settings.UseTrigger = TriggerCheck.IsChecked == true;
-        _settings.TriggerText = TriggerBox.Text;
-        _settings.IgnoredUsers = IgnoredUsersBox.Text;
-        _settings.VoiceName = (VoiceCombo.SelectedItem as VoiceItem)?.Name;
-        _settings.Rate = (int)RateSlider.Value;
-        _settings.Volume = (int)VolumeSlider.Value;
-        _settings.PlayLocal = PlayLocalCheck.IsChecked == true;
-        _settings.PlayInObs = PlayObsCheck.IsChecked == true;
-        _settings.ObsServerEnabled = ObsCheck.IsChecked == true;
-        _settings.ChatZoom = _chatZoom;
-        _settings.Save();
-    }
+    // ---------- Окно ----------
 
     private void Window_StateChanged(object? sender, EventArgs e)
     {
@@ -312,6 +326,8 @@ public partial class MainWindow : Window
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
     private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
+
+    // ---------- Масштаб чата ----------
 
     private void ChatList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
@@ -350,7 +366,10 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        SaveSettings();
+        _settingsWindow?.Close();
+        _settings.Channel = ChannelBox.Text.Trim();
+        _settings.ChatZoom = _chatZoom;
+        _settings.Save();
         _queueTimer.Stop();
         _irc.Dispose();
         _tts.Dispose();

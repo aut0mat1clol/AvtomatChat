@@ -141,16 +141,14 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="260"/>
-        </Grid.ColumnDefinitions>
 
         <!-- Верхняя панель подключения -->
-        <Border Grid.Row="0" Grid.ColumnSpan="2" Background="{StaticResource PanelBrush}"
+        <Border Grid.Row="0" Background="{StaticResource PanelBrush}"
                 CornerRadius="6" Padding="10" Margin="0,0,0,10">
             <DockPanel>
                 <TextBlock Text="Канал:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <Button Content="⚙ Настройки" DockPanel.Dock="Right" Margin="8,0,0,0"
+                        Click="SettingsButton_Click"/>
                 <Button x:Name="ConnectButton" Content="Подключиться" DockPanel.Dock="Right"
                         Margin="8,0,0,0" Click="ConnectButton_Click"/>
                 <TextBox x:Name="ChannelBox" VerticalAlignment="Center"
@@ -160,7 +158,7 @@
         </Border>
 
         <!-- Список сообщений -->
-        <Border Grid.Row="1" Grid.Column="0" Background="{StaticResource PanelBrush}"
+        <Border Grid.Row="1" Background="{StaticResource PanelBrush}"
                 CornerRadius="6" Padding="4">
             <ListBox x:Name="ChatList" Background="Transparent" BorderThickness="0"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -196,100 +194,21 @@
             </ListBox>
         </Border>
 
-        <!-- Панель настроек TTS -->
-        <Border Grid.Row="1" Grid.Column="1" Background="{StaticResource PanelBrush}"
-                CornerRadius="6" Padding="12" Margin="10,0,0,0">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel x:Name="TtsPanel">
-                <TextBlock Text="Озвучка (TTS)" FontSize="16" FontWeight="Bold" Margin="0,0,0,8"/>
-
-                <CheckBox x:Name="TtsEnabledCheck" Content="Включить озвучку" IsChecked="True"
-                          Checked="TtsSettings_Changed" Unchecked="TtsSettings_Changed"/>
-                <CheckBox x:Name="SpeakNameCheck" Content="Произносить ник" IsChecked="True"
-                          Checked="TtsSettings_Changed" Unchecked="TtsSettings_Changed"/>
-                <CheckBox x:Name="SkipCommandsCheck" Content="Пропускать !команды" IsChecked="True"
-                          Checked="TtsSettings_Changed" Unchecked="TtsSettings_Changed"/>
-                <CheckBox x:Name="StripLinksCheck" Content="Не читать ссылки" IsChecked="True"
-                          Checked="TtsSettings_Changed" Unchecked="TtsSettings_Changed"/>
-                <CheckBox x:Name="SkipEmotesCheck" Content="Не читать эмоуты" IsChecked="True"
-                          Checked="TtsSettings_Changed" Unchecked="TtsSettings_Changed"
-                          ToolTip="Не произносить названия эмоутов 7TV"/>
-
-                <CheckBox x:Name="TriggerCheck" Content="Озвучивать только с триггером" IsChecked="False"
-                          Checked="TtsSettings_Changed" Unchecked="TtsSettings_Changed"
-                          ToolTip="Читать только сообщения, содержащие слово-триггер"/>
-                <TextBox x:Name="TriggerBox" Text="!tts" Margin="0,2,0,0"
-                         TextChanged="TriggerBox_TextChanged"
-                         ToolTip="Слово или символы, при наличии которых сообщение будет озвучено (само слово не читается)"/>
-
-                <TextBlock Text="Не озвучивать пользователей:" Margin="0,10,0,2"
-                           Foreground="{StaticResource MutedBrush}"/>
-                <TextBox x:Name="IgnoredUsersBox" Margin="0,2,0,0"
-                         TextWrapping="Wrap" AcceptsReturn="False" MinHeight="44"
-                         VerticalScrollBarVisibility="Auto"
-                         TextChanged="IgnoredUsersBox_TextChanged"
-                         ToolTip="Имена через запятую (регистр не важен). Их сообщения не будут озвучиваться, но останутся видны в чате и OBS."/>
-
-                <TextBlock Text="Куда выводить звук:" Margin="0,10,0,2" Foreground="{StaticResource MutedBrush}"/>
-                <CheckBox x:Name="PlayLocalCheck" Content="На этом ПК" IsChecked="True"
-                          Checked="TtsSettings_Changed" Unchecked="TtsSettings_Changed"
-                          ToolTip="Проигрывать озвучку через динамики этого компьютера"/>
-                <CheckBox x:Name="PlayObsCheck" Content="В OBS (через оверлей)" IsChecked="False"
-                          Checked="TtsSettings_Changed" Unchecked="TtsSettings_Changed"
-                          ToolTip="Звук пойдёт из браузерного источника OBS — попадёт в микс стрима"/>
-
-                <TextBlock Text="Голос:" Margin="0,10,0,4" Foreground="{StaticResource MutedBrush}"/>
-                <ComboBox x:Name="VoiceCombo" SelectionChanged="VoiceCombo_SelectionChanged">
-                    <ComboBox.ItemTemplate>
-                        <!-- Явный тёмный текст: элементы теперь объекты (VoiceItem), и на их
-                             автосозданные TextBlock действует глобальный светлый стиль,
-                             а фон выпадающего списка системный белый -->
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" Foreground="#FF0E0E10"/>
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-
-                <TextBlock Margin="0,10,0,4" Foreground="{StaticResource MutedBrush}">
-                    <Run Text="Скорость: "/><Run x:Name="RateLabel" Text="0"/>
-                </TextBlock>
-                <Slider x:Name="RateSlider" Minimum="-10" Maximum="10" Value="0"
-                        TickFrequency="1" IsSnapToTickEnabled="True"
-                        ValueChanged="RateSlider_ValueChanged"/>
-
-                <TextBlock Margin="0,10,0,4" Foreground="{StaticResource MutedBrush}">
-                    <Run Text="Громкость: "/><Run x:Name="VolumeLabel" Text="100"/>
-                </TextBlock>
-                <Slider x:Name="VolumeSlider" Minimum="0" Maximum="100" Value="100"
-                        TickFrequency="5" IsSnapToTickEnabled="True"
-                        ValueChanged="VolumeSlider_ValueChanged"/>
-
-                <UniformGrid Columns="2" Margin="0,14,0,0">
-                    <Button Content="Пропустить" Margin="0,0,4,0" Click="SkipButton_Click"/>
-                    <Button Content="Очистить очередь" Margin="4,0,0,0" Click="ClearQueueButton_Click"/>
-                </UniformGrid>
-
-                <Button Content="Тест голоса" Margin="0,8,0,0" Click="TestButton_Click"/>
-
-                <TextBlock Text="OBS-оверлей" FontSize="16" FontWeight="Bold" Margin="0,16,0,4"/>
-                <CheckBox x:Name="ObsCheck" Content="Включить сервер для OBS" IsChecked="True"
-                          Checked="ObsCheck_Changed" Unchecked="ObsCheck_Changed"/>
-                <TextBox x:Name="ObsUrlBox" IsReadOnly="True" Margin="0,4,0,0"
-                         ToolTip="Скопируй этот адрес в источник «Браузер» в OBS"/>
-                <TextBlock Text="OBS → Источники → Браузер → вставь адрес выше"
-                           FontSize="11" Foreground="{StaticResource MutedBrush}"
-                           TextWrapping="Wrap" Margin="0,4,0,0"/>
-                </StackPanel>
-            </ScrollViewer>
-        </Border>
-
-        <!-- Статусная строка -->
-        <Border Grid.Row="2" Grid.ColumnSpan="2" Background="{StaticResource PanelBrush}"
+        <!-- Кнопки TTS под чатом -->
+        <Border Grid.Row="2" Background="{StaticResource PanelBrush}"
                 CornerRadius="6" Padding="10,6" Margin="0,10,0,0">
             <DockPanel>
-                <TextBlock x:Name="QueueLabel" DockPanel.Dock="Right" Foreground="{StaticResource MutedBrush}"
-                           Text="В очереди: 0"/>
-                <TextBlock x:Name="StatusLabel" Text="Не подключено" Foreground="{StaticResource MutedBrush}"/>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                    <Button Content="Пропустить" Margin="8,0,0,0" Padding="10,3" Click="SkipButton_Click"
+                            ToolTip="Пропустить текущее озвучиваемое сообщение"/>
+                    <Button Content="Очистить очередь" Margin="8,0,0,0" Padding="10,3" Click="ClearQueueButton_Click"/>
+                    <Button Content="Очистить чат" Margin="8,0,0,0" Padding="10,3" Click="ClearChatButton_Click"
+                            ToolTip="Убрать все сообщения из окна и OBS-оверлея"/>
+                    <TextBlock x:Name="QueueLabel" VerticalAlignment="Center" Margin="12,0,0,0"
+                               Foreground="{StaticResource MutedBrush}" Text="В очереди: 0"/>
+                </StackPanel>
+                <TextBlock x:Name="StatusLabel" Text="Не подключено" VerticalAlignment="Center"
+                           Foreground="{StaticResource MutedBrush}"/>
             </DockPanel>
         </Border>
         </Grid>

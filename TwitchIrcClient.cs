@@ -25,6 +25,14 @@ public class TwitchIrcClient : IDisposable
     /// <summary>Числовой Twitch ID канала (room-id) — приходит в ROOMSTATE после JOIN.</summary>
     public event Action<string>? RoomIdResolved;
 
+    /// <summary>Пользователь зашёл в чат (JOIN). Внимание: Twitch шлёт их пачками с задержкой.</summary>
+    public event Action<string>? UserJoined;
+
+    /// <summary>Пользователь вышел из чата (PART).</summary>
+    public event Action<string>? UserLeft;
+
+    private string _ownNick = "";
+
     public bool IsConnected => _tcp?.Connected == true;
 
     public async Task ConnectAsync(string channel)
@@ -48,7 +56,9 @@ public class TwitchIrcClient : IDisposable
 
         // Анонимный логин: пароль не нужен, ник justinfan + случайное число
         var nick = "justinfan" + Random.Shared.Next(10000, 99999);
-        await _writer.WriteLineAsync("CAP REQ :twitch.tv/tags twitch.tv/commands"); // теги + ROOMSTATE
+        _ownNick = nick;
+        // membership — события JOIN/PART (кто зашёл/вышел из чата)
+        await _writer.WriteLineAsync("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership");
         await _writer.WriteLineAsync($"NICK {nick}");
         await _writer.WriteLineAsync($"JOIN #{_channel}");
 
@@ -81,6 +91,25 @@ public class TwitchIrcClient : IDisposable
                     var roomId = ExtractTag(line, "room-id");
                     if (!string.IsNullOrEmpty(roomId))
                         RoomIdResolved?.Invoke(roomId);
+                    continue;
+                }
+
+                // JOIN/PART: кто зашёл/вышел из чата (:nick!nick@nick.tmi.twitch.tv JOIN #channel)
+                if (line.EndsWith(" JOIN #" + _channel, StringComparison.Ordinal) ||
+                    line.EndsWith(" PART #" + _channel, StringComparison.Ordinal))
+                {
+                    var join = line.Contains(" JOIN #", StringComparison.Ordinal);
+                    var bang = line.IndexOf('!');
+                    if (line.StartsWith(':') && bang > 1)
+                    {
+                        var user = line[1..bang];
+                        // свой служебный ник justinfanXXXXX не показываем
+                        if (!user.Equals(_ownNick, StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (join) UserJoined?.Invoke(user);
+                            else UserLeft?.Invoke(user);
+                        }
+                    }
                     continue;
                 }
 

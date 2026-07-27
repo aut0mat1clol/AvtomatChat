@@ -136,6 +136,7 @@ public class ObsOverlayServer : IDisposable
                             t = m.Text,
                             c = m.ColorHex,
                             ts = m.TimeString,
+                            sys = m.IsSystem, // системное событие (зашёл/вышел)
                             // части сообщения: текст или эмоут (e = URL картинки)
                             p = m.Parts?.Select(part => new
                             {
@@ -204,6 +205,11 @@ public class ObsOverlayServer : IDisposable
     animation: fadein .25s ease-out;
   }
   .msg .nick { font-weight: 700; }
+  .msg.sysmsg {
+    color: #adadb8;
+    font-style: italic;
+    font-size: 0.85em;
+  }
   .msg img.emote {
     height: 26px;
     vertical-align: middle;
@@ -259,7 +265,9 @@ public class ObsOverlayServer : IDisposable
       lastJson = txt;
       const msgs = JSON.parse(txt);
       chat.innerHTML = msgs.map(m =>
-        `<div class="msg"><span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: ${renderBody(m)}</div>`
+        m.sys
+          ? `<div class="msg sysmsg">${esc(m.u)} ${esc(m.t)}</div>`
+          : `<div class="msg"><span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: ${renderBody(m)}</div>`
       ).join('');
     } catch (e) { /* приложение закрыто — просто ждём */ }
   }

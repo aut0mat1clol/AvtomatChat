@@ -38,6 +38,12 @@ public class AppSettings
     // Интерфейс
     public double ChatZoom { get; set; } = 1.0;
 
+    // События входа/выхода зрителей (JOIN/PART)
+    /// <summary>Показывать «зашёл/вышел» в окне приложения.</summary>
+    public bool ShowJoinsLocal { get; set; }
+    /// <summary>Показывать «зашёл/вышел» ещё и в OBS-оверлее.</summary>
+    public bool ShowJoinsObs { get; set; }
+
     [JsonIgnore]
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

@@ -37,6 +37,17 @@ public static class MessageRenderer
         // Время
         tb.Inlines.Add(new Run(msg.TimeString + " ") { Foreground = TimeBrush, FontSize = 11 });
 
+        // Системное событие («зашёл в чат» / «вышел из чата») — серым курсивом
+        if (msg.IsSystem)
+        {
+            tb.Inlines.Add(new Run($"{msg.Username} {msg.Text}")
+            {
+                Foreground = TimeBrush,
+                FontStyle = FontStyles.Italic,
+            });
+            return;
+        }
+
         // Ник в цвете Twitch
         Brush nickBrush;
         try { nickBrush = (Brush)new BrushConverter().ConvertFromString(msg.ColorHex)!; }
