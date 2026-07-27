@@ -211,7 +211,7 @@ public partial class MainWindow : Window
     private void OnChatMessage(ChatMessage msg)
     {
         // Разбиваем текст на части (текст/эмоуты 7TV) для отрисовки и оверлея
-        msg.Parts = _7tv.Tokenize(msg.Text);
+        msg.Parts = _7tv.Tokenize(msg);
 
         AddToChat(msg);
         _obs.AddMessage(msg);

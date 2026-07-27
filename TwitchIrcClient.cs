@@ -197,7 +197,60 @@ public class TwitchIrcClient : IDisposable
         if (text.StartsWith("\u0001ACTION ") && text.EndsWith('\u0001'))
             text = text[8..^1];
 
-        return new ChatMessage { Username = username, Text = text, ColorHex = color };
+        var msg = new ChatMessage { Username = username, Text = text, ColorHex = color };
+
+        // Эмоуты Twitch (глобальные + сабские эмоуты канала): "25:0-4,12-16/1902:6-10"
+        if (tags.TryGetValue("emotes", out var emotesTag) && !string.IsNullOrEmpty(emotesTag))
+            msg.TwitchEmotes = ParseEmotesTag(emotesTag, text);
+
+        return msg;
+    }
+
+    /// <summary>
+    /// Разбор тега emotes. Позиции в теге — в кодовых точках Unicode,
+    /// переводим их в UTF-16 индексы (важно для эмодзи/суррогатных пар).
+    /// </summary>
+    private static List<(string Id, int Start, int End)>? ParseEmotesTag(string tag, string text)
+    {
+        try
+        {
+            // Карта: индекс кодовой точки -> индекс UTF-16
+            var cpToUtf16 = new List<int>();
+            for (var i = 0; i < text.Length; i++)
+            {
+                cpToUtf16.Add(i);
+                if (char.IsHighSurrogate(text[i])) i++; // суррогатная пара = одна кодовая точка
+            }
+
+            var result = new List<(string, int, int)>();
+            foreach (var group in tag.Split('/'))
+            {
+                var colon = group.IndexOf(':');
+                if (colon <= 0) continue;
+                var id = group[..colon];
+
+                foreach (var range in group[(colon + 1)..].Split(','))
+                {
+                    var dash = range.IndexOf('-');
+                    if (dash <= 0) continue;
+                    if (!int.TryParse(range[..dash], out var start) ||
+                        !int.TryParse(range[(dash + 1)..], out var end)) continue;
+                    if (start < 0 || end < start || end >= cpToUtf16.Count) continue;
+
+                    var s16 = cpToUtf16[start];
+                    // конец диапазона: последний UTF-16 индекс кодовой точки end
+                    var e16 = end + 1 < cpToUtf16.Count ? cpToUtf16[end + 1] - 1 : text.Length - 1;
+                    result.Add((id, s16, e16));
+                }
+            }
+
+            result.Sort((a, b) => a.Item2.CompareTo(b.Item2));
+            return result.Count > 0 ? result : null;
+        }
+        catch
+        {
+            return null; // битый тег — просто без твич-эмоутов
+        }
     }
 
     public void Disconnect()

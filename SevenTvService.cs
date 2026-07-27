@@ -123,7 +123,51 @@ public class SevenTvService
         return count;
     }
 
-    /// <summary>Разбивает текст сообщения на части: текст и эмоуты.</summary>
+    /// <summary>
+    /// Полный разбор сообщения: сначала эмоуты Twitch (по позициям из тега emotes —
+    /// это и глобальные Kappa/PogChamp, и сабские эмоуты канала), затем 7TV по словам.
+    /// </summary>
+    public List<MessagePart> Tokenize(ChatMessage msg)
+    {
+        if (msg.TwitchEmotes == null || msg.TwitchEmotes.Count == 0)
+            return Tokenize(msg.Text);
+
+        var parts = new List<MessagePart>();
+        var text = msg.Text;
+        var pos = 0;
+
+        foreach (var (id, start, end) in msg.TwitchEmotes)
+        {
+            if (start < pos || end >= text.Length) continue; // некорректный/пересекающийся диапазон
+
+            // Текст до эмоута — прогоняем через 7TV-разбор
+            if (start > pos)
+                parts.AddRange(Tokenize(text[pos..start]));
+
+            var name = text[start..(end + 1)];
+            parts.Add(new MessagePart
+            {
+                Text = name,
+                Emote = new SevenTvEmote
+                {
+                    Name = name,
+                    Animated = false,
+                    // static PNG для WPF, default (с анимацией) для браузерного оверлея
+                    ImageUrl = $"https://static-cdn.jtvnw.net/emoticons/v2/{id}/static/dark/2.0",
+                    WebpUrl = $"https://static-cdn.jtvnw.net/emoticons/v2/{id}/default/dark/2.0",
+                },
+            });
+            pos = end + 1;
+        }
+
+        // Хвост после последнего эмоута
+        if (pos < text.Length)
+            parts.AddRange(Tokenize(text[pos..]));
+
+        return parts;
+    }
+
+    /// <summary>Разбивает текст сообщения на части: текст и эмоуты 7TV.</summary>
     public List<MessagePart> Tokenize(string text)
     {
         var parts = new List<MessagePart>();
