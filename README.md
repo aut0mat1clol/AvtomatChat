@@ -73,9 +73,10 @@ dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile
 
 System.Speech видит «классические» голоса SAPI5:
 
-1. **Штатно**: `Параметры → Время и язык → Речь → Добавить голоса`.
-2. **Скрытые голоса Windows**: копирование веток реестра из `HKLM\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens` в `HKLM\SOFTWARE\Microsoft\Speech\Voices\Tokens` (ищи «unlock Windows TTS voices»).
-3. **Сторонние SAPI5-голоса** (Ivona, Acapela и др.) появятся в списке после установки.
+1. **RHVoice (рекомендуется, бесплатно)**: качественные русские голоса — Aleksandr, Anna, Elena, Irina и другие. Скачать: **[rhvoice.ru/ru-voices](https://rhvoice.ru/ru-voices/)** (установщик SAPI5 — движок ставится вместе с голосом, после перезапуска программы голоса появятся в списке).
+2. **Штатно**: `Параметры → Время и язык → Речь → Добавить голоса`.
+3. **Скрытые голоса Windows**: копирование веток реестра из `HKLM\SOFTWARE\Microsoft\Speech_OneCore\Voices\Tokens` в `HKLM\SOFTWARE\Microsoft\Speech\Voices\Tokens` (ищи «unlock Windows TTS voices»).
+4. **Сторонние SAPI5-голоса** (Ivona, Acapela и др.) появятся в списке после установки.
 
 ## Структура проекта
 
