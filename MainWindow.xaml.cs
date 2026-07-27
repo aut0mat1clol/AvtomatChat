@@ -85,6 +85,10 @@ public partial class MainWindow : Window
         VolumeSlider.Value = Math.Clamp(_settings.Volume, 0, 100);
         VolumeLabel.Text = ((int)VolumeSlider.Value).ToString();
         ObsCheck.IsChecked = _settings.ObsServerEnabled;
+        // Восстанавливаем масштаб чата (без вывода в статусную строку при старте)
+        _chatZoom = Math.Clamp(_settings.ChatZoom, 0.5, 3.0);
+        ChatZoomTransform.ScaleX = _chatZoom;
+        ChatZoomTransform.ScaleY = _chatZoom;
         _tts.SetRate((int)RateSlider.Value);
         _tts.SetVolume((int)VolumeSlider.Value);
 
@@ -279,6 +283,7 @@ public partial class MainWindow : Window
         _settings.PlayLocal = PlayLocalCheck.IsChecked == true;
         _settings.PlayInObs = PlayObsCheck.IsChecked == true;
         _settings.ObsServerEnabled = ObsCheck.IsChecked == true;
+        _settings.ChatZoom = _chatZoom;
         _settings.Save();
     }
 
@@ -296,6 +301,41 @@ public partial class MainWindow : Window
         WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
     private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void ChatList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        // Масштабирование чата: Ctrl + колесо мыши (как в браузере)
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+        e.Handled = true; // не прокручиваем список во время зума
+
+        var step = e.Delta > 0 ? 0.1 : -0.1;
+        SetChatZoom(_chatZoom + step);
+    }
+
+    private double _chatZoom = 1.0;
+
+    private void SetChatZoom(double zoom)
+    {
+        _chatZoom = Math.Clamp(Math.Round(zoom, 2), 0.5, 3.0);
+        ChatZoomTransform.ScaleX = _chatZoom;
+        ChatZoomTransform.ScaleY = _chatZoom;
+        StatusLabel.Text = $"Масштаб чата: {_chatZoom * 100:0}%";
+
+        // Держим последнее сообщение на виду после смены масштаба
+        if (ChatList.Items.Count > 0)
+            ChatList.ScrollIntoView(ChatList.Items[^1]);
+    }
+
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    {
+        // Ctrl+0 — сброс масштаба чата
+        if (e.Key == Key.D0 && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            SetChatZoom(1.0);
+            e.Handled = true;
+        }
+        base.OnPreviewKeyDown(e);
+    }
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {

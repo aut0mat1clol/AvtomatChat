@@ -35,6 +35,9 @@ public class AppSettings
     // OBS
     public bool ObsServerEnabled { get; set; } = true;
 
+    // Интерфейс
+    public double ChatZoom { get; set; } = 1.0;
+
     [JsonIgnore]
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

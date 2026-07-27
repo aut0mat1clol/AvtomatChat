@@ -164,7 +164,12 @@
                 CornerRadius="6" Padding="4">
             <ListBox x:Name="ChatList" Background="Transparent" BorderThickness="0"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     VirtualizingPanel.ScrollUnit="Pixel">
+                     VirtualizingPanel.ScrollUnit="Pixel"
+                     PreviewMouseWheel="ChatList_PreviewMouseWheel"
+                     ToolTip="Ctrl + колесо мыши — масштаб чата, Ctrl+0 — сброс">
+                <ListBox.LayoutTransform>
+                    <ScaleTransform x:Name="ChatZoomTransform" ScaleX="1" ScaleY="1"/>
+                </ListBox.LayoutTransform>
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
                         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
