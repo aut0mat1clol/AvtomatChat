@@ -30,7 +30,7 @@
 
 ## Скриншот работы
 
-Окно приложения: слева чат с эмоутами, справа панель настроек TTS и OBS, внизу статус и счётчик очереди.
+<img width="640" height="620" alt="image" src="https://github.com/user-attachments/assets/6a6e1746-a0ba-4ef3-b6da-aca320dbd2c1" />
 
 ## Требования
 
