@@ -10,7 +10,10 @@
     <RootNamespace>AvtomatChat</RootNamespace>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <!-- Версия приложения: должна совпадать с тегом релиза на GitHub -->
-    <Version>1.5</Version>
+    <Version>1.5.1</Version>
+    <!-- Нативные библиотеки (WebView2Loader.dll) — внутрь единого exe,
+         иначе single-file сборка падает с 'Unable to load DLL WebView2Loader.dll' -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
