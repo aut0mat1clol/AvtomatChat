@@ -162,49 +162,39 @@
         <Border x:Name="UpdateBanner" Grid.Row="1" Background="#FF1F3D1F" BorderBrush="{StaticResource AccentBrush}"
                 BorderThickness="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,10"
                 Visibility="Collapsed">
-            <DockPanel>
-                <Button x:Name="UpdateButton" Content="Обновить и перезапустить" DockPanel.Dock="Right"
-                        Padding="10,3" Click="UpdateButton_Click"/>
-                <TextBlock x:Name="UpdateLabel" VerticalAlignment="Center"
-                           Text="Доступна новая версия"/>
-            </DockPanel>
+            <StackPanel>
+                <DockPanel>
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                        <Button x:Name="DetailsButton" Content="Подробнее" Padding="10,3" Margin="0,0,8,0"
+                                Click="DetailsButton_Click" ToolTip="Что нового в этой версии"/>
+                        <Button x:Name="UpdateButton" Content="Обновить и перезапустить"
+                                Padding="10,3" Click="UpdateButton_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="UpdateLabel" VerticalAlignment="Center"
+                               Text="Доступна новая версия"/>
+                </DockPanel>
+                <!-- Что нового (раскрывается кнопкой «Подробнее») -->
+                <Border x:Name="ReleaseNotesPanel" Visibility="Collapsed" Background="#FF162B16"
+                        CornerRadius="4" Padding="10,8" Margin="0,8,0,0">
+                    <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto">
+                        <TextBlock x:Name="ReleaseNotesText" TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextBrush}" FontSize="13"/>
+                    </ScrollViewer>
+                </Border>
+            </StackPanel>
         </Border>
 
-        <!-- Список сообщений -->
+        <!-- Чат: встроенная страница оверлея (/streamer) — тот же вид, что в OBS,
+             плюс стримерские фичи: время, содержимое удалённых сообщений -->
         <Border Grid.Row="2" Background="{StaticResource PanelBrush}"
-                CornerRadius="6" Padding="4">
-            <ListBox x:Name="ChatList" Background="Transparent" BorderThickness="0"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     VirtualizingPanel.ScrollUnit="Pixel"
-                     PreviewMouseWheel="ChatList_PreviewMouseWheel"
-                     ToolTip="Ctrl + колесо мыши — масштаб чата, Ctrl+0 — сброс">
-                <ListBox.LayoutTransform>
-                    <ScaleTransform x:Name="ChatZoomTransform" ScaleX="1" ScaleY="1"/>
-                </ListBox.LayoutTransform>
-                <ListBox.ItemContainerStyle>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                        <Setter Property="Padding" Value="8,4"/>
-                        <Setter Property="Focusable" Value="False"/>
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="ListBoxItem">
-                                    <Border Background="Transparent" Padding="{TemplateBinding Padding}">
-                                        <ContentPresenter/>
-                                    </Border>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </ListBox.ItemContainerStyle>
-                <ListBox.ItemTemplate>
-                    <DataTemplate DataType="{x:Type local:ChatMessage}">
-                        <!-- MessageRenderer строит время + ник + текст с эмоутами 7TV -->
-                        <TextBlock TextWrapping="Wrap" Foreground="#FFEFEFF1"
-                                   local:MessageRenderer.Message="{Binding}"/>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+                CornerRadius="6" Padding="2">
+            <Grid>
+                <wv2:WebView2 x:Name="ChatView"
+                              xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"/>
+                <TextBlock x:Name="ChatFallback" Visibility="Collapsed"
+                           Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                           Margin="20" VerticalAlignment="Center" TextAlignment="Center"/>
+            </Grid>
         </Border>
 
         <!-- Кнопки TTS под чатом -->

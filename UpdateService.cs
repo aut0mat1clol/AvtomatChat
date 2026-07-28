@@ -48,6 +48,43 @@ public class UpdateService
 
     public record UpdateInfo(Version Version, string TagName, string ZipUrl);
 
+    /// <summary>
+    /// Текст «что нового» — описание релиза с GitHub.
+    /// Отдельный запрос к API только по нажатию «Подробнее» (бережём rate limit).
+    /// null — если описания нет или API недоступен.
+    /// </summary>
+    public async Task<string?> GetReleaseNotesAsync(string tagName)
+    {
+        try
+        {
+            var json = await Http.GetStringAsync(
+                $"https://api.github.com/repos/{Owner}/{Repo}/releases/tags/{Uri.EscapeDataString(tagName)}");
+            using var doc = JsonDocument.Parse(json);
+            var body = doc.RootElement.TryGetProperty("body", out var b) ? b.GetString() : null;
+            return string.IsNullOrWhiteSpace(body) ? null : CleanMarkdown(body);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Лёгкая чистка markdown под показ обычным текстом.</summary>
+    private static string CleanMarkdown(string md)
+    {
+        var lines = md.Replace("\r\n", "\n").Split('\n');
+        var sb = new StringBuilder();
+        foreach (var raw in lines)
+        {
+            var line = raw.TrimEnd();
+            line = line.TrimStart('#', ' ');                    // заголовки
+            line = line.Replace("**", "").Replace("`", "");     // жирный/код
+            if (line.StartsWith("- ")) line = "• " + line[2..]; // маркеры списков
+            sb.AppendLine(line);
+        }
+        return sb.ToString().Trim();
+    }
+
     /// <summary>Возвращает информацию о новой версии или null, если обновлений нет.</summary>
     public async Task<UpdateInfo?> CheckAsync()
     {

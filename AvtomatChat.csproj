@@ -10,7 +10,7 @@
     <RootNamespace>AvtomatChat</RootNamespace>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <!-- Версия приложения: должна совпадать с тегом релиза на GitHub -->
-    <Version>1.4.1</Version>
+    <Version>1.5</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,8 +21,8 @@
   <ItemGroup>
     <!-- System.Speech для .NET (Core/5+). Работает только на Windows. -->
     <PackageReference Include="System.Speech" Version="8.0.0" />
-    <!-- Анимация GIF-эмоутов в WPF -->
-    <PackageReference Include="WpfAnimatedGif" Version="2.0.2" />
+    <!-- Встроенный браузер для предпросмотра оверлея (тот же Chromium, что в OBS) -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
   </ItemGroup>
 
 </Project>

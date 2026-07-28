@@ -189,8 +189,6 @@
                 <Separator/>
 
                 <TextBlock Text="OBS-оверлей" FontSize="16" FontWeight="Bold" Margin="0,0,0,8"/>
-                <CheckBox x:Name="ObsCheck" Content="Включить сервер для OBS"
-                          Checked="ObsCheck_Changed" Unchecked="ObsCheck_Changed"/>
                 <TextBox x:Name="ObsUrlBox" IsReadOnly="True" Margin="0,4,0,0"
                          ToolTip="Скопируй этот адрес в источник «Браузер» в OBS"/>
                 <TextBlock Text="OBS → Источники → Браузер → вставь адрес выше"
@@ -224,9 +222,9 @@
                          FontFamily="Consolas" FontSize="12"
                          TextChanged="Setting_Changed_Text"
                          ToolTip="Например: .msg { font-family: 'Comic Sans MS'; } .msg .nick { text-transform: uppercase; }"/>
-                <TextBlock Text="Классы: .msg — сообщение, .msg .nick — ник, .msg img.emote — эмоут, .msg.alert — алерт, .msg.sysmsg — зашёл/вышел. Изменения видны после обновления кэша источника в OBS."
+                <TextBlock Text="Классы: .msg — сообщение, .msg .nick — ник, .msg img.emote — эмоут, .msg.alert — алерт, .msg.sysmsg — зашёл/вышел, .msg.deleted — удалённое. Изменения видны после обновления кэша источника в OBS."
                            FontSize="11" Foreground="{StaticResource MutedBrush}"
-                           TextWrapping="Wrap" Margin="0,4,0,0"/>
+                           TextWrapping="Wrap" Margin="0,6,0,0"/>
 
                 <Separator/>
 

@@ -67,13 +67,6 @@ public partial class SettingsWindow : Window
         _main.ApplySettingsFromWindow(this);
     }
 
-    private void ObsCheck_Changed(object sender, RoutedEventArgs e)
-    {
-        if (!_initialized) return;
-        _main.ToggleObsServer(ObsCheck.IsChecked == true);
-        _main.ApplySettingsFromWindow(this);
-    }
-
     private void TestButton_Click(object sender, RoutedEventArgs e) => _main.SpeakTestPhrase();
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();

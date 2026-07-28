@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -7,9 +7,6 @@ namespace AvtomatChat;
 
 public partial class MainWindow : Window
 {
-    private const int MaxMessages = 500; // ограничение истории, чтобы не жрать память
-
-    private readonly ObservableCollection<ChatMessage> _messages = new();
     private readonly TwitchIrcClient _irc = new();
     private readonly TtsService _tts = new();
     private readonly ObsOverlayServer _obs = new(8085);
@@ -22,7 +19,6 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        ChatList.ItemsSource = _messages;
 
         if (!_tts.IsAvailable)
         {
@@ -51,25 +47,12 @@ public partial class MainWindow : Window
         _irc.UserJoined += user => Dispatcher.Invoke(() => OnUserPresence(user, joined: true));
         _irc.UserLeft += user => Dispatcher.Invoke(() => OnUserPresence(user, joined: false));
         _irc.AlertReceived += alert => Dispatcher.Invoke(() => OnAlert(alert));
-        // Удаления сообщений модераторами: не убираем сообщение, а помечаем его —
-        // в окне остаётся текст с пометкой «Deleted», в оверлее показывается заглушка.
-        // Объекты сообщений общие с оверлеем, поэтому пометку видят оба.
-        _irc.MessageDeleted += msgId => Dispatcher.Invoke(() =>
-        {
-            for (var i = 0; i < _messages.Count; i++)
-                if (_messages[i].MsgId == msgId)
-                    MarkDeleted(i);
-        });
-        _irc.UserChatCleared += user => Dispatcher.Invoke(() =>
-        {
-            for (var i = 0; i < _messages.Count; i++)
-                if (!_messages[i].IsSystem && !_messages[i].IsAlert &&
-                    _messages[i].Username.Equals(user, StringComparison.OrdinalIgnoreCase))
-                    MarkDeleted(i);
-        });
+        // Удаления модераторами: помечаем в общем хранилище (сервер оверлея) —
+        // окно стримера покажет зачёркнутый текст, OBS — заглушку
+        _irc.MessageDeleted += msgId => _obs.MarkDeleted(msgId);
+        _irc.UserChatCleared += user => _obs.MarkUserDeleted(user);
         _irc.ChatCleared += () => Dispatcher.Invoke(() =>
         {
-            _messages.Clear();
             _obs.Clear();
             StatusLabel.Text = "Чат очищен модератором";
         });
@@ -91,16 +74,19 @@ public partial class MainWindow : Window
         // Применяем сохранённые настройки
         ChannelBox.Text = _settings.Channel;
         _chatZoom = Math.Clamp(_settings.ChatZoom, 0.5, 3.0);
-        ChatZoomTransform.ScaleX = _chatZoom;
-        ChatZoomTransform.ScaleY = _chatZoom;
         ApplySettingsToServices();
 
-        if (_settings.ObsServerEnabled)
-            StartObsServer();
+        // Сервер оверлея обязателен: он же рендерит чат в окне приложения
+        StartObsServer();
 
         // Лайаут оверлея из настроек
         _obs.LayoutPreset = _settings.OverlayPreset;
         _obs.CustomCss = _settings.OverlayCustomCss;
+        _obs.ShowJoinsLocal = _settings.ShowJoinsLocal;
+        _obs.ShowJoinsObs = _settings.ShowJoinsObs;
+
+        // Чат в окне: встроенный Chromium грузит /streamer (тот же вид, что в OBS)
+        _ = InitChatViewAsync();
 
         // Озвучка в OBS: готовые WAV-клипы отдаём серверу оверлея
         _tts.ObsSpeechReady += wav => _obs.AddSpeech(wav);
@@ -108,6 +94,45 @@ public partial class MainWindow : Window
         // Проверка обновлений (в фоне, не мешает запуску)
         if (_settings.AutoUpdateCheck)
             _ = CheckForUpdatesAsync();
+    }
+
+    // ---------- Чат-вью (WebView2) ----------
+
+    private bool _chatViewReady;
+
+    private async Task InitChatViewAsync()
+    {
+        try
+        {
+            var dataDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "AvtomatChat", "webview2");
+            var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
+                userDataFolder: dataDir);
+            await ChatView.EnsureCoreWebView2Async(env);
+            ChatView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+            ChatView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            ChatView.ZoomFactor = _chatZoom;
+            ChatView.CoreWebView2.Navigate(_obs.Url.TrimEnd('/') + "/streamer");
+            _chatViewReady = true;
+        }
+        catch (Exception ex)
+        {
+            // Нет WebView2 Runtime (редкость: есть в Win11 и ставится с Edge)
+            ChatView.Visibility = Visibility.Collapsed;
+            ChatFallback.Visibility = Visibility.Visible;
+            ChatFallback.Text =
+                "Для отображения чата нужен WebView2 Runtime.\n\n" +
+                "Установи его с developer.microsoft.com/microsoft-edge/webview2 и перезапусти приложение.\n\n" +
+                "Ошибка: " + ex.Message;
+        }
+    }
+
+    /// <summary>Перезагрузка чат-вью (после смены лайаута).</summary>
+    private void ReloadChatView()
+    {
+        if (_chatViewReady)
+            ChatView.CoreWebView2.Reload();
     }
 
     // ---------- Алерты ----------
@@ -118,7 +143,6 @@ public partial class MainWindow : Window
     {
         if (!_settings.ShowAlerts) return;
 
-        AddToChat(alert);
         _obs.AddMessage(alert);
 
         if (_settings.SpeakAlerts)
@@ -179,6 +203,28 @@ public partial class MainWindow : Window
             UpdateLabel.Text = "Не удалось обновиться: " + ex.Message;
             UpdateButton.IsEnabled = true;
         }
+    }
+
+    private bool _notesLoaded;
+
+    private async void DetailsButton_Click(object sender, RoutedEventArgs e)
+    {
+        // Повторное нажатие — свернуть/развернуть
+        if (ReleaseNotesPanel.Visibility == Visibility.Visible)
+        {
+            ReleaseNotesPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+        ReleaseNotesPanel.Visibility = Visibility.Visible;
+
+        if (_notesLoaded || _pendingUpdate == null) return;
+
+        ReleaseNotesText.Text = "Загрузка…";
+        var notes = await _updater.GetReleaseNotesAsync(_pendingUpdate.TagName);
+        ReleaseNotesText.Text = notes
+            ?? "Описание недоступно. Полный список изменений:\n" +
+               $"github.com/aut0mat1clol/AvtomatChat/releases/tag/{_pendingUpdate.TagName}";
+        _notesLoaded = notes != null;
     }
 
     /// <summary>Применяет _settings к TTS и прочим сервисам.</summary>
@@ -251,7 +297,6 @@ public partial class MainWindow : Window
         w.VolumeLabel.Text = ((int)w.VolumeSlider.Value).ToString();
         w.ShowJoinsLocalCheck.IsChecked = _settings.ShowJoinsLocal;
         w.ShowJoinsObsCheck.IsChecked = _settings.ShowJoinsObs;
-        w.ObsCheck.IsChecked = _settings.ObsServerEnabled;
         w.ObsUrlBox.Text = _obs.Url;
         w.AutoUpdateCheck.IsChecked = _settings.AutoUpdateCheck;
         w.VersionLabel.Text = $"Текущая версия: {UpdateService.CurrentVersionText}";
@@ -295,7 +340,8 @@ public partial class MainWindow : Window
         _settings.Volume = (int)w.VolumeSlider.Value;
         _settings.ShowJoinsLocal = w.ShowJoinsLocalCheck.IsChecked == true;
         _settings.ShowJoinsObs = w.ShowJoinsObsCheck.IsChecked == true;
-        _settings.ObsServerEnabled = w.ObsCheck.IsChecked == true;
+        _obs.ShowJoinsLocal = _settings.ShowJoinsLocal;
+        _obs.ShowJoinsObs = _settings.ShowJoinsObs;
         _settings.AutoUpdateCheck = w.AutoUpdateCheck.IsChecked == true;
 
         // Алерты
@@ -306,8 +352,11 @@ public partial class MainWindow : Window
         if (w.PresetCombo.SelectedItem is ObsOverlayServer.LayoutPresetInfo preset)
             _settings.OverlayPreset = preset.Id;
         _settings.OverlayCustomCss = w.CustomCssBox.Text;
+        var layoutChanged = _obs.LayoutPreset != _settings.OverlayPreset
+                            || _obs.CustomCss != _settings.OverlayCustomCss;
         _obs.LayoutPreset = _settings.OverlayPreset;
         _obs.CustomCss = _settings.OverlayCustomCss;
+        if (layoutChanged) ReloadChatView(); // применяем лайаут к чату в окне
         if (w.VoiceCombo.SelectedItem is SettingsWindow.VoiceItem item)
             _settings.VoiceName = item.Name;
 
@@ -316,8 +365,9 @@ public partial class MainWindow : Window
 
     public void ToggleObsServer(bool enabled)
     {
+        // Сервер выключать нельзя — на нём работает чат в окне приложения.
+        // Галочка «сервер для OBS» оставлена для совместимости и просто игнорирует выключение.
         if (enabled) StartObsServer();
-        else _obs.Stop();
     }
 
     public void SpeakTestPhrase()
@@ -342,55 +392,27 @@ public partial class MainWindow : Window
 
     private void OnChatMessage(ChatMessage msg)
     {
-        // Разбиваем текст на части (текст/эмоуты 7TV) для отрисовки и оверлея
+        // Разбиваем текст на части (текст/эмоуты 7TV) для отрисовки
         msg.Parts = _7tv.Tokenize(msg);
 
-        AddToChat(msg);
-        _obs.AddMessage(msg);
+        _obs.AddMessage(msg); // единое хранилище: окно стримера и OBS читают отсюда
         _tts.EnqueueMessage(msg);
     }
 
     /// <summary>Событие входа/выхода зрителя (JOIN/PART из IRC).</summary>
     private void OnUserPresence(string user, bool joined)
     {
-        if (!_settings.ShowJoinsLocal) return;
+        // Событие всегда кладём в хранилище; показывать его или нет,
+        // каждый вид (стример/OBS) решает по своей галочке
+        if (!_settings.ShowJoinsLocal && !_settings.ShowJoinsObs) return;
 
-        var msg = new ChatMessage
+        _obs.AddMessage(new ChatMessage
         {
             Username = user,
             Text = joined ? "зашёл в чат" : "вышел из чата",
             IsSystem = true,
-        };
-
-        AddToChat(msg);
-
-        if (_settings.ShowJoinsObs)
-            _obs.AddMessage(msg);
+        });
         // TTS такие события не озвучивает
-    }
-
-    private void AddToChat(ChatMessage msg)
-    {
-        _messages.Add(msg);
-        while (_messages.Count > MaxMessages)
-            _messages.RemoveAt(0);
-
-        // Автопрокрутка вниз
-        if (ChatList.Items.Count > 0)
-            ChatList.ScrollIntoView(ChatList.Items[^1]);
-    }
-
-    /// <summary>Помечает сообщение удалённым и перерисовывает его в списке.</summary>
-    private void MarkDeleted(int index)
-    {
-        var msg = _messages[index];
-        if (msg.IsDeleted) return;
-        msg.IsDeleted = true; // оверлей видит ту же ссылку — заглушка появится сама
-
-        // ObservableCollection не замечает изменения внутри элемента —
-        // пересоздаём элемент на том же месте, чтобы WPF перерисовал строку
-        _messages.RemoveAt(index);
-        _messages.Insert(index, msg);
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -450,8 +472,7 @@ public partial class MainWindow : Window
 
     private void ClearChatButton_Click(object sender, RoutedEventArgs e)
     {
-        _messages.Clear();     // окно приложения
-        _obs.Clear();          // OBS-оверлей
+        _obs.Clear(); // общее хранилище: очистится и окно, и OBS-оверлей
         StatusLabel.Text = "Чат очищен";
     }
 
@@ -474,28 +495,13 @@ public partial class MainWindow : Window
 
     // ---------- Масштаб чата ----------
 
-    private void ChatList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-    {
-        // Масштабирование чата: Ctrl + колесо мыши (как в браузере)
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
-        e.Handled = true; // не прокручиваем список во время зума
-
-        var step = e.Delta > 0 ? 0.1 : -0.1;
-        SetChatZoom(_chatZoom + step);
-    }
-
     private double _chatZoom = 1.0;
 
     private void SetChatZoom(double zoom)
     {
         _chatZoom = Math.Clamp(Math.Round(zoom, 2), 0.5, 3.0);
-        ChatZoomTransform.ScaleX = _chatZoom;
-        ChatZoomTransform.ScaleY = _chatZoom;
+        if (_chatViewReady) ChatView.ZoomFactor = _chatZoom; // зум Chromium — как Ctrl+колесо в браузере
         StatusLabel.Text = $"Масштаб чата: {_chatZoom * 100:0}%";
-
-        // Держим последнее сообщение на виду после смены масштаба
-        if (ChatList.Items.Count > 0)
-            ChatList.ScrollIntoView(ChatList.Items[^1]);
     }
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
@@ -505,6 +511,12 @@ public partial class MainWindow : Window
         {
             SetChatZoom(1.0);
             e.Handled = true;
+        }
+        // Ctrl +/- — масштаб чата (колесо перехватывает сам WebView2)
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0)
+        {
+            if (e.Key is Key.OemPlus or Key.Add) { SetChatZoom(_chatZoom + 0.1); e.Handled = true; }
+            if (e.Key is Key.OemMinus or Key.Subtract) { SetChatZoom(_chatZoom - 0.1); e.Handled = true; }
         }
         base.OnPreviewKeyDown(e);
     }
