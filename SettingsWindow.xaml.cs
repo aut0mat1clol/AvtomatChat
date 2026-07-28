@@ -44,6 +44,9 @@ public partial class SettingsWindow : Window
     private void Setting_Changed_Sel(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         => Setting_Changed(sender, new RoutedEventArgs());
 
+    private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e)
+        => await _main.CheckForUpdatesManualAsync();
+
     private void IgnoredUsersBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         => Setting_Changed(sender, new RoutedEventArgs());
 

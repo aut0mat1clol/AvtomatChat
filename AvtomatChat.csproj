@@ -10,7 +10,7 @@
     <RootNamespace>AvtomatChat</RootNamespace>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <!-- Версия приложения: должна совпадать с тегом релиза на GitHub -->
-    <Version>1.4</Version>
+    <Version>1.4.1</Version>
   </PropertyGroup>
 
   <ItemGroup>

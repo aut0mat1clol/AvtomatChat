@@ -133,23 +133,34 @@ public partial class MainWindow : Window
     private readonly UpdateService _updater = new();
     private UpdateService.UpdateInfo? _pendingUpdate;
 
-    private async Task CheckForUpdatesAsync()
+    /// <summary>Проверка обновлений. manual=true — запуск кнопкой из настроек (результат всегда в статус).</summary>
+    private async Task CheckForUpdatesAsync(bool manual = false)
     {
         try
         {
+            if (manual) StatusLabel.Text = "Проверка обновлений…";
             var update = await _updater.CheckAsync();
-            if (update == null) return; // уже последняя версия
+            if (update == null)
+            {
+                if (manual)
+                    StatusLabel.Text = $"Обновлений нет — версия {UpdateService.CurrentVersionText} последняя";
+                return;
+            }
 
             _pendingUpdate = update;
             UpdateLabel.Text = $"Доступна версия {update.TagName} (текущая {UpdateService.CurrentVersionText})";
             UpdateBanner.Visibility = Visibility.Visible;
+            if (manual) StatusLabel.Text = $"Найдена версия {update.TagName} — баннер в главном окне";
         }
-        catch
+        catch (Exception ex)
         {
-            // Нет интернета или GitHub недоступен — молча пропускаем,
-            // проверим при следующем запуске.
+            // Раньше молчали — теперь показываем причину (GitHub недоступен, нет сети и т.п.)
+            StatusLabel.Text = "Проверка обновлений не удалась: " + ex.Message;
         }
     }
+
+    /// <summary>Ручная проверка обновлений из окна настроек.</summary>
+    public Task CheckForUpdatesManualAsync() => CheckForUpdatesAsync(manual: true);
 
     private async void UpdateButton_Click(object sender, RoutedEventArgs e)
     {

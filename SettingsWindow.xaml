@@ -234,6 +234,8 @@
                 <CheckBox x:Name="AutoUpdateCheck" Content="Проверять обновления при запуске"
                           Checked="Setting_Changed" Unchecked="Setting_Changed"
                           ToolTip="Проверка через GitHub Releases. Если найдена новая версия — в главном окне появится баннер с кнопкой обновления."/>
+                <Button Content="Проверить сейчас" Margin="0,6,0,0" Click="CheckUpdatesButton_Click"
+                        ToolTip="Результат проверки появится в статусной строке главного окна"/>
                 <TextBlock x:Name="VersionLabel" FontSize="11" Foreground="{StaticResource MutedBrush}"
                            Margin="0,4,0,12"/>
             </StackPanel>
