@@ -38,6 +38,9 @@ public class AppSettings
     // Интерфейс
     public double ChatZoom { get; set; } = 1.0;
 
+    /// <summary>Подсказка о сворачивании в трей уже показана.</summary>
+    public bool TrayTipShown { get; set; }
+
     // События входа/выхода зрителей (JOIN/PART)
     /// <summary>Показывать «зашёл/вышел» в окне приложения.</summary>
     public bool ShowJoinsLocal { get; set; }

@@ -4,7 +4,7 @@ using System.Windows.Threading;
 
 namespace AvtomatChat;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -60,7 +60,7 @@ public partial class App : Application
     {
         LogCrash(ex, source);
 
-        MessageBox.Show(
+        System.Windows.MessageBox.Show(
             "Произошла ошибка:\r\n\r\n" + ex?.Message +
             "\r\n\r\nПодробности в crash.log рядом с программой.",
             "AvtomatChat — ошибка",

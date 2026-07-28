@@ -460,7 +460,7 @@ public partial class MainWindow : Window
         ChannelBox.IsEnabled = !connected;
     }
 
-    private void ChannelBox_KeyDown(object sender, KeyEventArgs e)
+    private void ChannelBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
         if (e.Key == Key.Enter && !_connected)
             ConnectButton_Click(sender, new RoutedEventArgs());
@@ -504,7 +504,7 @@ public partial class MainWindow : Window
         StatusLabel.Text = $"Масштаб чата: {_chatZoom * 100:0}%";
     }
 
-    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    protected override void OnPreviewKeyDown(System.Windows.Input.KeyEventArgs e)
     {
         // Ctrl+0 — сброс масштаба чата
         if (e.Key == Key.D0 && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
@@ -521,8 +521,108 @@ public partial class MainWindow : Window
         base.OnPreviewKeyDown(e);
     }
 
+    // ---------- Трей ----------
+
+    private System.Windows.Forms.NotifyIcon? _trayIcon;
+    private System.Windows.Forms.ToolStripMenuItem _trayTtsToggle = null!;
+    private bool _reallyClosing; // true — выход из трея, закрываем по-настоящему
+
+    /// <summary>Создаёт иконку в трее (лениво, при первом сворачивании).</summary>
+    private void EnsureTrayIcon()
+    {
+        if (_trayIcon != null) return;
+
+        var menu = new System.Windows.Forms.ContextMenuStrip();
+        menu.Items.Add("Открыть", null, (_, _) => Dispatcher.Invoke(RestoreFromTray));
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
+        // Управление озвучкой прямо из трея
+        _trayTtsToggle = new System.Windows.Forms.ToolStripMenuItem("Озвучка включена")
+        {
+            CheckOnClick = true,
+        };
+        _trayTtsToggle.Click += (_, _) => Dispatcher.Invoke(() =>
+        {
+            _settings.TtsEnabled = _trayTtsToggle.Checked;
+            ApplySettingsToServices();
+            // Если открыто окно настроек — синхронизируем галочку
+            if (_settingsWindow != null)
+                _settingsWindow.TtsEnabledCheck.IsChecked = _settings.TtsEnabled;
+        });
+        menu.Items.Add(_trayTtsToggle);
+        menu.Items.Add("Пропустить сообщение", null, (_, _) => Dispatcher.Invoke(() => _tts.SkipCurrent()));
+        menu.Items.Add("Очистить очередь", null, (_, _) => Dispatcher.Invoke(() => _tts.ClearQueue()));
+        menu.Items.Add("Очистить чат", null, (_, _) => Dispatcher.Invoke(() =>
+        {
+            _obs.Clear();
+            StatusLabel.Text = "Чат очищен";
+        }));
+
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add("Выход", null, (_, _) => Dispatcher.Invoke(() =>
+        {
+            _reallyClosing = true;
+            Close();
+        }));
+
+        // Перед открытием меню обновляем галочку (её могли поменять в настройках)
+        menu.Opening += (_, _) =>
+        {
+            _trayTtsToggle.Checked = _settings.TtsEnabled && _tts.IsAvailable;
+            _trayTtsToggle.Enabled = _tts.IsAvailable;
+        };
+
+        _trayIcon = new System.Windows.Forms.NotifyIcon
+        {
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!),
+            Text = "AvtomatChat — чат работает",
+            ContextMenuStrip = menu,
+            Visible = false,
+        };
+        _trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(RestoreFromTray);
+    }
+
+    private void HideToTray()
+    {
+        EnsureTrayIcon();
+        _trayIcon!.Visible = true;
+        Hide();
+
+        // Одноразовая подсказка, чтобы пользователь не подумал, что приложение закрылось
+        if (!_settings.TrayTipShown)
+        {
+            _settings.TrayTipShown = true;
+            _settings.Save();
+            _trayIcon.ShowBalloonTip(3000, "AvtomatChat работает",
+                "Чат и озвучка продолжают работать. Двойной клик — открыть, ПКМ → Выход — закрыть.",
+                System.Windows.Forms.ToolTipIcon.Info);
+        }
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+        if (_trayIcon != null) _trayIcon.Visible = false;
+    }
+
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // Подключены к чату и это не «Выход» из трея — сворачиваемся в трей,
+        // чтобы случайный крестик не убил озвучку и оверлей посреди стрима
+        if (_connected && !_reallyClosing)
+        {
+            e.Cancel = true;
+            HideToTray();
+            return;
+        }
+
+        if (_trayIcon != null)
+        {
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+        }
         _settingsWindow?.Close();
         _settings.Channel = ChannelBox.Text.Trim();
         _settings.ChatZoom = _chatZoom;
