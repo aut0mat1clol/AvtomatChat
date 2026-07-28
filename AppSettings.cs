@@ -44,6 +44,10 @@ public class AppSettings
     /// <summary>Показывать «зашёл/вышел» ещё и в OBS-оверлее.</summary>
     public bool ShowJoinsObs { get; set; }
 
+    // Обновления
+    /// <summary>Проверять обновления на GitHub при запуске.</summary>
+    public bool AutoUpdateCheck { get; set; } = true;
+
     [JsonIgnore]
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

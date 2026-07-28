@@ -186,6 +186,9 @@ public class TtsService : IDisposable
     {
         if (!IsAvailable || !Enabled) return;
 
+        // Пользователь в списке исключений (бот и т.п.) — не озвучиваем
+        if (_ignoredUsers.Contains(msg.Username.Trim())) return;
+
         // Убираем эмоуты из речи (если сообщение уже разобрано на части)
         var sourceText = msg.Text;
         if (SkipEmotes && msg.Parts != null)

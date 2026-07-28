@@ -73,6 +73,52 @@ public partial class MainWindow : Window
 
         // Озвучка в OBS: готовые WAV-клипы отдаём серверу оверлея
         _tts.ObsSpeechReady += wav => _obs.AddSpeech(wav);
+
+        // Проверка обновлений (в фоне, не мешает запуску)
+        if (_settings.AutoUpdateCheck)
+            _ = CheckForUpdatesAsync();
+    }
+
+    // ---------- Автообновление ----------
+
+    private readonly UpdateService _updater = new();
+    private UpdateService.UpdateInfo? _pendingUpdate;
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            var update = await _updater.CheckAsync();
+            if (update == null) return; // уже последняя версия
+
+            _pendingUpdate = update;
+            UpdateLabel.Text = $"Доступна версия {update.TagName} (текущая {UpdateService.CurrentVersionText})";
+            UpdateBanner.Visibility = Visibility.Visible;
+        }
+        catch
+        {
+            // Нет интернета или GitHub недоступен — молча пропускаем,
+            // проверим при следующем запуске.
+        }
+    }
+
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pendingUpdate == null) return;
+
+        UpdateButton.IsEnabled = false;
+        try
+        {
+            await _updater.DownloadAndPrepareAsync(
+                _pendingUpdate,
+                s => Dispatcher.Invoke(() => UpdateLabel.Text = s));
+            Close(); // скрипт заменит exe и перезапустит приложение
+        }
+        catch (Exception ex)
+        {
+            UpdateLabel.Text = "Не удалось обновиться: " + ex.Message;
+            UpdateButton.IsEnabled = true;
+        }
     }
 
     /// <summary>Применяет _settings к TTS и прочим сервисам.</summary>
@@ -147,6 +193,8 @@ public partial class MainWindow : Window
         w.ShowJoinsObsCheck.IsChecked = _settings.ShowJoinsObs;
         w.ObsCheck.IsChecked = _settings.ObsServerEnabled;
         w.ObsUrlBox.Text = _obs.Url;
+        w.AutoUpdateCheck.IsChecked = _settings.AutoUpdateCheck;
+        w.VersionLabel.Text = $"Текущая версия: {UpdateService.CurrentVersionText}";
 
         // Голоса с пометкой языков: «Имя [RU]», «Имя [RU/EN]»
         w.VoiceCombo.Items.Clear();
@@ -176,6 +224,7 @@ public partial class MainWindow : Window
         _settings.ShowJoinsLocal = w.ShowJoinsLocalCheck.IsChecked == true;
         _settings.ShowJoinsObs = w.ShowJoinsObsCheck.IsChecked == true;
         _settings.ObsServerEnabled = w.ObsCheck.IsChecked == true;
+        _settings.AutoUpdateCheck = w.AutoUpdateCheck.IsChecked == true;
         if (w.VoiceCombo.SelectedItem is SettingsWindow.VoiceItem item)
             _settings.VoiceName = item.Name;
 

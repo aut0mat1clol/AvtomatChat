@@ -9,6 +9,8 @@
     <AssemblyName>AvtomatChat</AssemblyName>
     <RootNamespace>AvtomatChat</RootNamespace>
     <ApplicationIcon>icon.ico</ApplicationIcon>
+    <!-- Версия приложения: должна совпадать с тегом релиза на GitHub -->
+    <Version>1.3</Version>
   </PropertyGroup>
 
   <ItemGroup>
