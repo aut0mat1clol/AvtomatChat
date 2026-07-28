@@ -11,6 +11,15 @@ public class ChatMessage
     /// <summary>Системное событие (зашёл/вышел из чата) — серым курсивом, без озвучки.</summary>
     public bool IsSystem { get; init; }
 
+    /// <summary>Алерт (саб, ресаб, подарок, рейд) — выделяется в чате.</summary>
+    public bool IsAlert { get; init; }
+
+    /// <summary>ID сообщения из тега id (для удаления по CLEARMSG).</summary>
+    public string? MsgId { get; set; }
+
+    /// <summary>Сообщение удалено модератором: в проге — пометка «Deleted», в оверлее — заглушка.</summary>
+    public bool IsDeleted { get; set; }
+
     /// <summary>Эмоуты Twitch из тега emotes: (Id, Start, End) — индексы UTF-16 в Text.</summary>
     public List<(string Id, int Start, int End)>? TwitchEmotes { get; set; }
 

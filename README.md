@@ -1,6 +1,6 @@
 # <img src="logo.png" alt="AvtomatChat" width="42" align="top"/> AvtomatChat
 
-![Build](https://img.shields.io/badge/build-passing-brightgreen) ![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4) ![Platform](https://img.shields.io/badge/platform-Windows-0078D6) ![License](https://img.shields.io/badge/license-MIT-blue)
+![Build](https://img.shields.io/badge/build-passing-brightgreen) ![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4) ![Platform](https://img.shields.io/badge/platform-Windows-0078D6) ![License](https://img.shields.io/badge/license-MIT-blue) ![Release](https://img.shields.io/github/v/release/aut0mat1clol/AvtomatChat)
 
 Десктоп-приложение на **C# / WPF (.NET 8)** для стримеров: показывает чат Twitch-канала в реальном времени, озвучивает сообщения через **System.Speech** (офлайн, без API-ключей) и выводит чат + звук TTS в **OBS** через встроенный localhost-сервер.
 
@@ -9,11 +9,15 @@
 ### Чат
 - 📺 Подключение к чату любого Twitch-канала **без авторизации** (анонимный IRC, OAuth-токен не нужен)
 - 🎨 Ники в цветах Twitch, отметки времени, автопрокрутка
-- 😀 **Эмоуты 7TV**: глобальные + канальные, картинками в чате и в OBS (анимированные — анимируются), с кэшированием
+- 😀 **Эмоуты Twitch**: глобальные (Kappa, PogChamp…) и сабские эмоуты каналов — из тегов IRC
+- 😎 **Эмоуты 7TV**: глобальные + канальные, картинками в чате и в OBS (анимированные — анимируются), с кэшированием
+- 🔍 **Масштаб чата**: Ctrl + колесо мыши (50–300%), Ctrl+0 — сброс; масштаб сохраняется
+- 👋 **События «зашёл/вышел»** (опционально): отдельные галочки для показа в приложении и в OBS-оверлее
+- 🧹 Кнопка **«Очистить чат»** — очищает окно приложения и OBS-оверлей
 
 ### Озвучка (TTS)
 - 🔊 Очередь озвучки — сообщения читаются по одному, кнопки «Пропустить» и «Очистить очередь»
-- 🗣 Выбор голоса, скорость, громкость (русский голос выбирается автоматически)
+- 🗣 Выбор голоса с пометкой языков (`[RU]`, `[EN]`, `[RU/EN]`), скорость, громкость; русский голос выбирается автоматически
 - 🔑 **Режим триггера**: озвучивать только сообщения с ключевым словом (например `!tts`), само слово не читается
 - 🤖 **Список исключений**: боты (Nightbot, StreamElements и др. — уже вписаны) не озвучиваются
 - 🧹 Фильтры: пропуск `!команд`, замена ссылок словом «ссылка», не читать эмоуты, анти-спам («ААААА» → «ААА»), обрезка длинных сообщений
@@ -25,19 +29,20 @@
 - Звук TTS может идти прямо из источника — попадает в микс стрима
 
 ### Прочее
-- 💾 Все настройки сохраняются между запусками (`%APPDATA%\AvtomatChat\settings.json`)
+- ⚙ Все настройки — в отдельном окне (кнопка «⚙ Настройки»), применяются мгновенно
+- 🔄 **Автообновление**: приложение проверяет GitHub Releases при запуске; новая версия ставится в один клик из баннера
+- 💾 Настройки сохраняются между запусками (`%APPDATA%\AvtomatChat\settings.json`)
 - 🛡 Ошибки не роняют приложение: пишутся в `crash.log`, известные баги WPF подавляются
 
-## Скриншот работы
+## Установка
 
-<img width="640" height="620" alt="image" src="https://github.com/user-attachments/assets/6a6e1746-a0ba-4ef3-b6da-aca320dbd2c1" />
+**Готовый exe:** скачай `AvtomatChat-win-x64.zip` из [последнего релиза](https://github.com/aut0mat1clol/AvtomatChat/releases/latest), распакуй и запусти `AvtomatChat.exe`.
 
-## Требования
-
-- **Windows 10/11** (WPF и System.Speech работают только на Windows)
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (для запуска из исходников) или .NET 8 Desktop Runtime (для готового exe)
+Требуется **Windows 10/11** и [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) (если не установлен — Windows предложит скачать при первом запуске). Дальше обновления приложение ставит само.
 
 ## Запуск из исходников
+
+Нужен [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0):
 
 ```bash
 git clone https://github.com/aut0mat1clol/AvtomatChat.git
@@ -45,24 +50,23 @@ cd AvtomatChat
 dotnet run
 ```
 
-## Сборка одним exe
+Сборка одним exe:
 
 ```bash
 dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
 ```
 
-Готовый `AvtomatChat.exe` появится в папке `publish/`.
-
 ## Как пользоваться
 
-1. Введи имя канала (например `lirik` — без `#` и без ссылки) и нажми **Подключиться**.
+1. Введи имя канала (например `aut0mat1clol` — без `#` и без ссылки) и нажми **Подключиться**.
 2. Сообщения появляются в списке и озвучиваются по очереди.
-3. Справа — настройки озвучки. Кнопка **Тест голоса** проверяет звук без подключения.
+3. Кнопка **«⚙ Настройки»** — озвучка, события чата, OBS, обновления. Кнопка **Тест голоса** проверяет звук без подключения.
+4. **Ctrl + колесо мыши** над чатом — масштаб, **Ctrl+0** — сброс.
 
 ### Подключение к OBS
 
 1. В OBS: **Источники → + → Браузер**, URL `http://localhost:8085/`, размер под макет (например 500×800).
-2. Для звука TTS в стриме: включи галочку **«В OBS (через оверлей)»** в приложении.
+2. Для звука TTS в стриме: включи галочку **«В OBS (через оверлей)»** в настройках.
 3. В свойствах источника включи **«Управлять звуком через микшер»**, чтобы регулировать громкость TTS в микшере OBS.
 
 ### Режим триггера
@@ -82,15 +86,24 @@ System.Speech видит «классические» голоса SAPI5:
 
 | Файл | Назначение |
 |---|---|
-| `TwitchIrcClient.cs` | Анонимный IRC-клиент Twitch (TCP, PRIVMSG, теги, ROOMSTATE) |
+| `TwitchIrcClient.cs` | Анонимный IRC-клиент Twitch: PRIVMSG, теги (эмоуты, цвета), ROOMSTATE, JOIN/PART |
 | `TtsService.cs` | Очередь озвучки, фильтры, триггер, игнор-лист, WAV для OBS |
-| `SevenTvService.cs` | Эмоуты 7TV (API v3), разбор сообщений на текст/эмоуты |
+| `SevenTvService.cs` | Эмоуты 7TV (API v3) + разбор сообщений на текст/эмоуты (Twitch + 7TV) |
 | `EmoteImageCache.cs` | Кэш картинок эмоутов в памяти |
 | `MessageRenderer.cs` | Отрисовка сообщений с эмоутами в WPF |
-| `ObsOverlayServer.cs` | HTTP-сервер оверлея: страница, JSON сообщений, WAV озвучки |
+| `ObsOverlayServer.cs` | HTTP-сервер оверлея: страница, JSON сообщений, аудио озвучки |
+| `UpdateService.cs` | Автообновление через GitHub Releases |
 | `AppSettings.cs` | Сохранение настроек в JSON |
-| `MainWindow.xaml(.cs)` | Интерфейс |
+| `MainWindow.xaml(.cs)` | Главное окно: чат, подключение, баннер обновления |
+| `SettingsWindow.xaml(.cs)` | Окно настроек |
 | `App.xaml.cs` | Глобальный перехват ошибок, crash.log |
+
+## Выпуск новой версии (заметка для себя)
+
+1. Поднять `<Version>` в `AvtomatChat.csproj` (должна совпадать с тегом релиза).
+2. `dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish`
+3. Запаковать exe в `AvtomatChat-win-x64.zip` (имя ассета важно — его ищет автообновление).
+4. Создать релиз с тегом версии и прикрепить zip — пользователи обновятся сами.
 
 ## Лицензия
 

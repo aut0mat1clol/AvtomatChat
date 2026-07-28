@@ -43,9 +43,36 @@ public partial class MainWindow : Window
         // События IRC (приходят из фонового потока — маршалим в UI)
         _irc.MessageReceived += msg => Dispatcher.Invoke(() => OnChatMessage(msg));
         _irc.StatusChanged += s => Dispatcher.Invoke(() => StatusLabel.Text = s);
-        _irc.RoomIdResolved += roomId => _ = _7tv.LoadChannelAsync(roomId); // эмоуты канала 7TV
+        _irc.RoomIdResolved += roomId =>
+        {
+            _currentRoomId = roomId;
+            _ = _7tv.LoadChannelAsync(roomId); // эмоуты канала 7TV
+        };
         _irc.UserJoined += user => Dispatcher.Invoke(() => OnUserPresence(user, joined: true));
         _irc.UserLeft += user => Dispatcher.Invoke(() => OnUserPresence(user, joined: false));
+        _irc.AlertReceived += alert => Dispatcher.Invoke(() => OnAlert(alert));
+        // Удаления сообщений модераторами: не убираем сообщение, а помечаем его —
+        // в окне остаётся текст с пометкой «Deleted», в оверлее показывается заглушка.
+        // Объекты сообщений общие с оверлеем, поэтому пометку видят оба.
+        _irc.MessageDeleted += msgId => Dispatcher.Invoke(() =>
+        {
+            for (var i = 0; i < _messages.Count; i++)
+                if (_messages[i].MsgId == msgId)
+                    MarkDeleted(i);
+        });
+        _irc.UserChatCleared += user => Dispatcher.Invoke(() =>
+        {
+            for (var i = 0; i < _messages.Count; i++)
+                if (!_messages[i].IsSystem && !_messages[i].IsAlert &&
+                    _messages[i].Username.Equals(user, StringComparison.OrdinalIgnoreCase))
+                    MarkDeleted(i);
+        });
+        _irc.ChatCleared += () => Dispatcher.Invoke(() =>
+        {
+            _messages.Clear();
+            _obs.Clear();
+            StatusLabel.Text = "Чат очищен модератором";
+        });
         _irc.ConnectionFailed += ex => Dispatcher.Invoke(() =>
         {
             StatusLabel.Text = "Ошибка соединения: " + ex.Message;
@@ -71,12 +98,34 @@ public partial class MainWindow : Window
         if (_settings.ObsServerEnabled)
             StartObsServer();
 
+        // Лайаут оверлея из настроек
+        _obs.LayoutPreset = _settings.OverlayPreset;
+        _obs.CustomCss = _settings.OverlayCustomCss;
+
         // Озвучка в OBS: готовые WAV-клипы отдаём серверу оверлея
         _tts.ObsSpeechReady += wav => _obs.AddSpeech(wav);
 
         // Проверка обновлений (в фоне, не мешает запуску)
         if (_settings.AutoUpdateCheck)
             _ = CheckForUpdatesAsync();
+    }
+
+    // ---------- Алерты ----------
+
+    private string _currentRoomId = "";
+
+    private void OnAlert(ChatMessage alert)
+    {
+        if (!_settings.ShowAlerts) return;
+
+        AddToChat(alert);
+        _obs.AddMessage(alert);
+
+        if (_settings.SpeakAlerts)
+        {
+            // Алерты читаются без ника-эмодзи и в обход триггера
+            _tts.EnqueueRaw(alert.Text);
+        }
     }
 
     // ---------- Автообновление ----------
@@ -196,6 +245,18 @@ public partial class MainWindow : Window
         w.AutoUpdateCheck.IsChecked = _settings.AutoUpdateCheck;
         w.VersionLabel.Text = $"Текущая версия: {UpdateService.CurrentVersionText}";
 
+        // Алерты
+        w.ShowAlertsCheck.IsChecked = _settings.ShowAlerts;
+        w.SpeakAlertsCheck.IsChecked = _settings.SpeakAlerts;
+
+        // Лайаут оверлея
+        foreach (var p in ObsOverlayServer.Presets)
+            w.PresetCombo.Items.Add(p);
+        w.PresetCombo.SelectedItem = ObsOverlayServer.Presets
+            .FirstOrDefault(p => p.Id == _settings.OverlayPreset);
+        if (w.PresetCombo.SelectedItem == null) w.PresetCombo.SelectedIndex = 0;
+        w.CustomCssBox.Text = _settings.OverlayCustomCss;
+
         // Голоса с пометкой языков: «Имя [RU]», «Имя [RU/EN]»
         w.VoiceCombo.Items.Clear();
         foreach (var (name, langs) in _tts.GetVoiceDetails())
@@ -225,6 +286,17 @@ public partial class MainWindow : Window
         _settings.ShowJoinsObs = w.ShowJoinsObsCheck.IsChecked == true;
         _settings.ObsServerEnabled = w.ObsCheck.IsChecked == true;
         _settings.AutoUpdateCheck = w.AutoUpdateCheck.IsChecked == true;
+
+        // Алерты
+        _settings.ShowAlerts = w.ShowAlertsCheck.IsChecked == true;
+        _settings.SpeakAlerts = w.SpeakAlertsCheck.IsChecked == true;
+
+        // Лайаут оверлея
+        if (w.PresetCombo.SelectedItem is ObsOverlayServer.LayoutPresetInfo preset)
+            _settings.OverlayPreset = preset.Id;
+        _settings.OverlayCustomCss = w.CustomCssBox.Text;
+        _obs.LayoutPreset = _settings.OverlayPreset;
+        _obs.CustomCss = _settings.OverlayCustomCss;
         if (w.VoiceCombo.SelectedItem is SettingsWindow.VoiceItem item)
             _settings.VoiceName = item.Name;
 
@@ -295,6 +367,19 @@ public partial class MainWindow : Window
         // Автопрокрутка вниз
         if (ChatList.Items.Count > 0)
             ChatList.ScrollIntoView(ChatList.Items[^1]);
+    }
+
+    /// <summary>Помечает сообщение удалённым и перерисовывает его в списке.</summary>
+    private void MarkDeleted(int index)
+    {
+        var msg = _messages[index];
+        if (msg.IsDeleted) return;
+        msg.IsDeleted = true; // оверлей видит ту же ссылку — заглушка появится сама
+
+        // ObservableCollection не замечает изменения внутри элемента —
+        // пересоздаём элемент на том же месте, чтобы WPF перерисовал строку
+        _messages.RemoveAt(index);
+        _messages.Insert(index, msg);
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)

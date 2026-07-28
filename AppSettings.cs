@@ -48,6 +48,18 @@ public class AppSettings
     /// <summary>Проверять обновления на GitHub при запуске.</summary>
     public bool AutoUpdateCheck { get; set; } = true;
 
+    // Алерты
+    /// <summary>Показывать алерты (сабы/рейды) в чате.</summary>
+    public bool ShowAlerts { get; set; } = true;
+    /// <summary>Озвучивать алерты.</summary>
+    public bool SpeakAlerts { get; set; } = true;
+
+    // Лайаут оверлея
+    /// <summary>Пресет лайаута OBS-оверлея: classic/compact/bubbles/big.</summary>
+    public string OverlayPreset { get; set; } = "classic";
+    /// <summary>Пользовательский CSS для оверлея.</summary>
+    public string OverlayCustomCss { get; set; } = "";
+
     [JsonIgnore]
     public static string FilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

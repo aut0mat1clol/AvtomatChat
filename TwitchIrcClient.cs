@@ -31,6 +31,18 @@ public class TwitchIrcClient : IDisposable
     /// <summary>Пользователь вышел из чата (PART).</summary>
     public event Action<string>? UserLeft;
 
+    /// <summary>Алерт из USERNOTICE: саб, ресаб, подарочные сабы, рейд, объявление.</summary>
+    public event Action<ChatMessage>? AlertReceived;
+
+    /// <summary>Модератор удалил одно сообщение (CLEARMSG): id сообщения.</summary>
+    public event Action<string>? MessageDeleted;
+
+    /// <summary>Бан/таймаут: удалить все сообщения пользователя (CLEARCHAT с ником).</summary>
+    public event Action<string>? UserChatCleared;
+
+    /// <summary>Полная очистка чата модератором (CLEARCHAT без ника).</summary>
+    public event Action? ChatCleared;
+
     private string _ownNick = "";
 
     public bool IsConnected => _tcp?.Connected == true;
@@ -113,6 +125,37 @@ public class TwitchIrcClient : IDisposable
                     continue;
                 }
 
+                // USERNOTICE: сабы, ресабы, подарки, рейды, объявления
+                if (line.Contains(" USERNOTICE #", StringComparison.Ordinal))
+                {
+                    var alert = ParseUserNotice(line);
+                    if (alert != null)
+                        AlertReceived?.Invoke(alert);
+                    continue;
+                }
+
+                // CLEARMSG: модератор удалил одно сообщение
+                if (line.Contains(" CLEARMSG #", StringComparison.Ordinal))
+                {
+                    var msgId = ExtractTag(line, "target-msg-id");
+                    if (!string.IsNullOrEmpty(msgId))
+                        MessageDeleted?.Invoke(msgId);
+                    continue;
+                }
+
+                // CLEARCHAT: бан/таймаут (с ником) или полная очистка чата (без ника)
+                if (line.Contains(" CLEARCHAT #", StringComparison.Ordinal))
+                {
+                    var idx = line.IndexOf(" CLEARCHAT #", StringComparison.Ordinal);
+                    var afterChannel = line[(idx + " CLEARCHAT #".Length)..];
+                    var colon = afterChannel.IndexOf(" :", StringComparison.Ordinal);
+                    if (colon >= 0)
+                        UserChatCleared?.Invoke(afterChannel[(colon + 2)..].Trim());
+                    else
+                        ChatCleared?.Invoke();
+                    continue;
+                }
+
                 var msg = ParsePrivMsg(line);
                 if (msg != null)
                     MessageReceived?.Invoke(msg);
@@ -143,6 +186,46 @@ public class TwitchIrcClient : IDisposable
                 return pair[(eq + 1)..];
         }
         return null;
+    }
+
+    /// <summary>
+    /// Разбор USERNOTICE (алерты): msg-id определяет тип события.
+    /// Текст берём из системного сообщения Twitch (system-msg).
+    /// </summary>
+    private static ChatMessage? ParseUserNotice(string line)
+    {
+        var msgId = ExtractTag(line, "msg-id");
+        if (string.IsNullOrEmpty(msgId)) return null;
+
+        var user = ExtractTag(line, "display-name");
+        if (string.IsNullOrEmpty(user)) user = ExtractTag(line, "login") ?? "";
+
+        // system-msg: "UserName subscribed at Tier 1." (пробелы экранированы как \s)
+        var sysMsg = (ExtractTag(line, "system-msg") ?? "")
+            .Replace("\\s", " ").Replace("\\:", ";").Replace("\\\\", "\\");
+
+        var (emoji, fallback) = msgId switch
+        {
+            "sub" => ("🎉", "оформил подписку!"),
+            "resub" => ("🎉", "продлил подписку!"),
+            "subgift" => ("🎁", "подарил подписку!"),
+            "submysterygift" => ("🎁", "раздаёт подписки!"),
+            "giftpaidupgrade" or "primepaidupgrade" => ("⬆", "улучшил подписку!"),
+            "raid" => ("⚡", "рейдит канал!"),
+            "announcement" => ("📢", "объявление"),
+            _ => ("", ""),
+        };
+        if (emoji.Length == 0) return null; // неинтересные типы (ритуалы и т.п.)
+
+        var text = string.IsNullOrWhiteSpace(sysMsg) ? $"{user} {fallback}" : sysMsg;
+
+        return new ChatMessage
+        {
+            Username = emoji,
+            Text = text,
+            IsAlert = true,
+            ColorHex = "#00E701",
+        };
     }
 
     /// <summary>
@@ -198,6 +281,10 @@ public class TwitchIrcClient : IDisposable
             text = text[8..^1];
 
         var msg = new ChatMessage { Username = username, Text = text, ColorHex = color };
+
+        // id сообщения — нужен для удаления по CLEARMSG
+        if (tags.TryGetValue("id", out var mid) && !string.IsNullOrEmpty(mid))
+            msg.MsgId = mid;
 
         // Эмоуты Twitch (глобальные + сабские эмоуты канала): "25:0-4,12-16/1902:6-10"
         if (tags.TryGetValue("emotes", out var emotesTag) && !string.IsNullOrEmpty(emotesTag))

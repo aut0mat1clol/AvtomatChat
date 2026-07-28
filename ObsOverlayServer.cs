@@ -66,6 +66,19 @@ public class ObsOverlayServer : IDisposable
         lock (_lock) _messages.Clear();
     }
 
+    /// <summary>Удалить одно сообщение по id (CLEARMSG).</summary>
+    public void RemoveMessage(string msgId)
+    {
+        lock (_lock) _messages.RemoveAll(m => m.MsgId == msgId);
+    }
+
+    /// <summary>Удалить все сообщения пользователя (бан/таймаут).</summary>
+    public void RemoveUserMessages(string username)
+    {
+        lock (_lock) _messages.RemoveAll(m =>
+            m.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>Добавить WAV-клип озвучки для проигрывания в оверлее.</summary>
     public void AddSpeech(byte[] wav)
     {
@@ -137,6 +150,8 @@ public class ObsOverlayServer : IDisposable
                             c = m.ColorHex,
                             ts = m.TimeString,
                             sys = m.IsSystem, // системное событие (зашёл/вышел)
+                            al = m.IsAlert,   // алерт (саб/рейд)
+                            del = m.IsDeleted, // удалено модератором — в оверлее заглушка
                             // части сообщения: текст или эмоут (e = URL картинки)
                             p = m.Parts?.Select(part => new
                             {
@@ -160,7 +175,8 @@ public class ObsOverlayServer : IDisposable
             }
             else
             {
-                body = OverlayHtml;
+                // Подставляем CSS выбранного пресета + пользовательский CSS
+                body = OverlayHtml.Replace("/*EXTRA_CSS*/", GetPresetCss(LayoutPreset) + "\n" + (CustomCss ?? ""));
                 contentType = "text/html; charset=utf-8";
             }
 
@@ -210,6 +226,17 @@ public class ObsOverlayServer : IDisposable
     font-style: italic;
     font-size: 0.85em;
   }
+  .msg.alert {
+    color: #00E701;
+    font-weight: 700;
+    border-left: 3px solid #00E701;
+    padding-left: 8px;
+  }
+  .msg.deleted {
+    color: #7a7a85;
+    font-style: italic;
+    font-size: 0.85em;
+  }
   .msg img.emote {
     height: 26px;
     vertical-align: middle;
@@ -232,6 +259,7 @@ public class ObsOverlayServer : IDisposable
     cursor: pointer;
     z-index: 10;
   }
+/*EXTRA_CSS*/
 </style>
 </head>
 <body>
@@ -265,9 +293,13 @@ public class ObsOverlayServer : IDisposable
       lastJson = txt;
       const msgs = JSON.parse(txt);
       chat.innerHTML = msgs.map(m =>
-        m.sys
-          ? `<div class="msg sysmsg">${esc(m.u)} ${esc(m.t)}</div>`
-          : `<div class="msg"><span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: ${renderBody(m)}</div>`
+        m.del
+          ? `<div class="msg deleted">Сообщение удалено</div>`
+          : m.al
+            ? `<div class="msg alert">${esc(m.u)} ${esc(m.t)}</div>`
+            : m.sys
+              ? `<div class="msg sysmsg">${esc(m.u)} ${esc(m.t)}</div>`
+              : `<div class="msg"><span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: ${renderBody(m)}</div>`
       ).join('');
     } catch (e) { /* приложение закрыто — просто ждём */ }
   }
@@ -340,4 +372,53 @@ public class ObsOverlayServer : IDisposable
         Stop();
         try { _listener.Close(); } catch { }
     }
+
+    // ---------- Лайауты ----------
+
+    /// <summary>Имя пресета лайаута: classic, compact, bubbles, big.</summary>
+    public volatile string LayoutPreset = "classic";
+
+    /// <summary>Дополнительный CSS пользователя (добавляется после пресета).</summary>
+    public volatile string? CustomCss;
+
+    /// <summary>Пресет лайаута (record — для биндинга в WPF).</summary>
+    public sealed record LayoutPresetInfo(string Id, string Title)
+    {
+        public override string ToString() => Title;
+    }
+
+    public static readonly LayoutPresetInfo[] Presets =
+    {
+        new("classic", "Классика"),
+        new("compact", "Компактный"),
+        new("bubbles", "Пузыри"),
+        new("big", "Крупный текст"),
+    };
+
+    private static string GetPresetCss(string preset) => preset switch
+    {
+        "compact" => """
+            body { font-size: 15px; }
+            .msg { margin: 1px 0; line-height: 1.2; }
+            .msg img.emote { height: 18px; }
+            """,
+        "bubbles" => """
+            .msg {
+              background: rgba(20,20,23,.85);
+              border-radius: 12px;
+              padding: 6px 12px;
+              margin: 4px 0;
+              width: fit-content;
+              max-width: 92%;
+              text-shadow: none;
+            }
+            .msg.alert { border: 1px solid #00E701; }
+            """,
+        "big" => """
+            body { font-size: 28px; }
+            .msg { margin: 5px 0; }
+            .msg img.emote { height: 34px; }
+            """,
+        _ => "", // classic — стили по умолчанию
+    };
 }

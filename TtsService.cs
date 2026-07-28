@@ -237,6 +237,14 @@ public class TtsService : IDisposable
         _synth?.SpeakAsyncCancelAll();
     }
 
+    /// <summary>Озвучить текст напрямую, минуя фильтры (для алертов).</summary>
+    public void EnqueueRaw(string text)
+    {
+        if (!IsAvailable || !Enabled || string.IsNullOrWhiteSpace(text)) return;
+        if (text.Length > MaxLength) text = text[..MaxLength] + "…";
+        _queue.Add(text);
+    }
+
     private void WorkerLoop()
     {
         try

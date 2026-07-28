@@ -38,6 +38,12 @@ public partial class SettingsWindow : Window
     private void TriggerBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         => Setting_Changed(sender, new RoutedEventArgs());
 
+    private void Setting_Changed_Text(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        => Setting_Changed(sender, new RoutedEventArgs());
+
+    private void Setting_Changed_Sel(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        => Setting_Changed(sender, new RoutedEventArgs());
+
     private void IgnoredUsersBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         => Setting_Changed(sender, new RoutedEventArgs());
 

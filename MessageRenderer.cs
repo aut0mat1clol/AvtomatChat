@@ -27,6 +27,7 @@ public static class MessageRenderer
 
     private static readonly Brush TimeBrush = new SolidColorBrush(Color.FromRgb(0x7A, 0x7A, 0x85));
     private static readonly Brush TextBrush = new SolidColorBrush(Color.FromRgb(0xEF, 0xEF, 0xF1));
+    private static readonly Brush AlertBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xE7, 0x01));
 
     private static void OnMessageChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -36,6 +37,40 @@ public static class MessageRenderer
 
         // Время
         tb.Inlines.Add(new Run(msg.TimeString + " ") { Foreground = TimeBrush, FontSize = 11 });
+
+        // Удалённое модератором сообщение: текст сохраняем, приглушаем и помечаем (как у 7TV)
+        if (msg.IsDeleted)
+        {
+            var delBrush = TimeBrush;
+            tb.Inlines.Add(new Run(msg.Username)
+            {
+                FontWeight = FontWeights.Bold,
+                Foreground = delBrush,
+            });
+            tb.Inlines.Add(new Run(": ") { Foreground = delBrush });
+            tb.Inlines.Add(new Run(msg.Text)
+            {
+                Foreground = delBrush,
+                TextDecorations = TextDecorations.Strikethrough,
+            });
+            tb.Inlines.Add(new Run("  — Deleted")
+            {
+                Foreground = delBrush,
+                FontStyle = FontStyles.Italic,
+            });
+            return;
+        }
+
+        // Алерт (саб/рейд) — зелёным жирным
+        if (msg.IsAlert)
+        {
+            tb.Inlines.Add(new Run($"{msg.Username} {msg.Text}")
+            {
+                Foreground = AlertBrush,
+                FontWeight = FontWeights.Bold,
+            });
+            return;
+        }
 
         // Системное событие («зашёл в чат» / «вышел из чата») — серым курсивом
         if (msg.IsSystem)

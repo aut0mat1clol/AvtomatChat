@@ -199,6 +199,37 @@
 
                 <Separator/>
 
+                <TextBlock Text="Алерты" FontSize="16" FontWeight="Bold" Margin="0,0,0,8"/>
+                <CheckBox x:Name="ShowAlertsCheck" Content="Показывать алерты (сабы, рейды)"
+                          Checked="Setting_Changed" Unchecked="Setting_Changed"
+                          ToolTip="Подписки, ресабы, подарочные сабы и рейды из чата — без авторизации"/>
+                <CheckBox x:Name="SpeakAlertsCheck" Content="Озвучивать алерты"
+                          Checked="Setting_Changed" Unchecked="Setting_Changed"/>
+
+                <Separator/>
+
+                <TextBlock Text="Лайаут OBS-оверлея" FontSize="16" FontWeight="Bold" Margin="0,0,0,8"/>
+                <TextBlock Text="Пресет:" Foreground="{StaticResource MutedBrush}"/>
+                <ComboBox x:Name="PresetCombo" Margin="0,4,0,0" SelectionChanged="Setting_Changed_Sel">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Title}" Foreground="#FF0E0E10"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Text="Свой CSS (добавляется к пресету):" Margin="0,10,0,2"
+                           Foreground="{StaticResource MutedBrush}"/>
+                <TextBox x:Name="CustomCssBox" MinHeight="80" AcceptsReturn="True"
+                         TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                         FontFamily="Consolas" FontSize="12"
+                         TextChanged="Setting_Changed_Text"
+                         ToolTip="Например: .msg { font-family: 'Comic Sans MS'; } .msg .nick { text-transform: uppercase; }"/>
+                <TextBlock Text="Классы: .msg — сообщение, .msg .nick — ник, .msg img.emote — эмоут, .msg.alert — алерт, .msg.sysmsg — зашёл/вышел. Изменения видны после обновления кэша источника в OBS."
+                           FontSize="11" Foreground="{StaticResource MutedBrush}"
+                           TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                <Separator/>
+
                 <TextBlock Text="Обновления" FontSize="16" FontWeight="Bold" Margin="0,0,0,8"/>
                 <CheckBox x:Name="AutoUpdateCheck" Content="Проверять обновления при запуске"
                           Checked="Setting_Changed" Unchecked="Setting_Changed"
