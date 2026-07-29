@@ -56,11 +56,8 @@ public partial class MainWindow : Window
             _obs.Clear();
             StatusLabel.Text = "Чат очищен модератором";
         });
-        _irc.ConnectionFailed += ex => Dispatcher.Invoke(() =>
-        {
-            StatusLabel.Text = "Ошибка соединения: " + ex.Message;
-            SetConnectedState(false);
-        });
+        // Обрывы соединения IRC-клиент чинит сам (автопереподключение),
+        // статусы видны через StatusChanged
 
         // 7TV: статусы загрузки + глобальные эмоуты (в фоне)
         _7tv.StatusChanged += s => Dispatcher.Invoke(() => StatusLabel.Text = s);

@@ -50,10 +50,47 @@ public class UpdateService
 
     /// <summary>
     /// Текст «что нового» — описание релиза с GitHub.
-    /// Отдельный запрос к API только по нажатию «Подробнее» (бережём rate limit).
-    /// null — если описания нет или API недоступен.
+    /// Основной способ — HTML-страница релиза (без лимитов API),
+    /// запасной — API. null — если описание недоступно.
     /// </summary>
     public async Task<string?> GetReleaseNotesAsync(string tagName)
+    {
+        return await GetNotesViaPageAsync(tagName) ?? await GetNotesViaApiAsync(tagName);
+    }
+
+    /// <summary>Описание релиза со страницы github.com/.../releases/tag/X — rate limit не расходуется.</summary>
+    private static async Task<string?> GetNotesViaPageAsync(string tagName)
+    {
+        try
+        {
+            var html = await Http.GetStringAsync(
+                $"https://github.com/{Owner}/{Repo}/releases/tag/{Uri.EscapeDataString(tagName)}");
+
+            // Описание релиза — в <div class="markdown-body...">…</div>
+            var m = System.Text.RegularExpressions.Regex.Match(
+                html, "<div[^>]*class=\"[^\"]*markdown-body[^\"]*\"[^>]*>(.*?)</div>",
+                System.Text.RegularExpressions.RegexOptions.Singleline);
+            if (!m.Success) return null;
+
+            var text = m.Groups[1].Value;
+            // <li> — в маркеры, <br>/<p> — в переносы строк, прочие теги — прочь
+            text = System.Text.RegularExpressions.Regex.Replace(text, "<li[^>]*>", "\n• ");
+            text = System.Text.RegularExpressions.Regex.Replace(text, "<(br|/p|/h\\d)[^>]*>", "\n");
+            text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", "");
+            text = System.Net.WebUtility.HtmlDecode(text);
+            // схлопываем лишние пустые строки
+            text = System.Text.RegularExpressions.Regex.Replace(text.Trim(), "\n{3,}", "\n\n");
+
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Запасной способ — GitHub API (может упереться в rate limit).</summary>
+    private async Task<string?> GetNotesViaApiAsync(string tagName)
     {
         try
         {

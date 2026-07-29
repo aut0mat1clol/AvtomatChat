@@ -21,7 +21,6 @@ public class TwitchIrcClient : IDisposable
 
     public event Action<ChatMessage>? MessageReceived;
     public event Action<string>? StatusChanged;
-    public event Action<Exception>? ConnectionFailed;
     /// <summary>Числовой Twitch ID канала (room-id) — приходит в ROOMSTATE после JOIN.</summary>
     public event Action<string>? RoomIdResolved;
 
@@ -47,6 +46,11 @@ public class TwitchIrcClient : IDisposable
 
     public bool IsConnected => _tcp?.Connected == true;
 
+    /// <summary>
+    /// Подключение с автоматическим переподключением: при обрыве соединения
+    /// (ошибка сети, тишина дольше 6 минут, закрытие сервером) клиент сам
+    /// переподключается с нарастающей паузой, пока не вызван Disconnect().
+    /// </summary>
     public async Task ConnectAsync(string channel)
     {
         Disconnect();
@@ -58,9 +62,22 @@ public class TwitchIrcClient : IDisposable
         _cts = new CancellationTokenSource();
         var token = _cts.Token;
 
+        // Первое подключение — синхронно, чтобы кнопка сразу показала ошибку
+        await ConnectOnceAsync(token);
+
+        // Дальше supervisor следит за соединением и переподключается сам
+        _ = Task.Run(() => SupervisorLoopAsync(token), token);
+    }
+
+    /// <summary>Одна попытка подключения + логин + JOIN.</summary>
+    private async Task ConnectOnceAsync(CancellationToken token)
+    {
+        CleanupConnection();
+
         _tcp = new TcpClient();
         StatusChanged?.Invoke($"Подключение к {Host}...");
         await _tcp.ConnectAsync(Host, Port, token);
+        try { _tcp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true); } catch { }
 
         var stream = _tcp.GetStream();
         _reader = new StreamReader(stream, Encoding.UTF8);
@@ -75,19 +92,68 @@ public class TwitchIrcClient : IDisposable
         await _writer.WriteLineAsync($"JOIN #{_channel}");
 
         StatusChanged?.Invoke($"Подключено к каналу #{_channel}");
-
-        // Фоновое чтение
-        _ = Task.Run(() => ReadLoopAsync(token), token);
     }
 
-    private async Task ReadLoopAsync(CancellationToken token)
+    /// <summary>
+    /// Держит соединение живым: читает до обрыва, затем переподключается
+    /// с нарастающей паузой (2с → 4с → … → 60с максимум).
+    /// </summary>
+    private async Task SupervisorLoopAsync(CancellationToken token)
+    {
+        var attempt = 0;
+        while (!token.IsCancellationRequested)
+        {
+            var normalEnd = await ReadUntilDropAsync(token);
+            if (token.IsCancellationRequested) break;
+
+            attempt = normalEnd ? 1 : attempt + 1;
+            var delay = Math.Min(60, 2 * (1 << Math.Min(attempt - 1, 5))); // 2,4,8,16,32,60
+            StatusChanged?.Invoke($"Соединение потеряно — переподключение через {delay} с…");
+            try { await Task.Delay(TimeSpan.FromSeconds(delay), token); }
+            catch (OperationCanceledException) { break; }
+
+            try
+            {
+                await ConnectOnceAsync(token);
+                attempt = 0; // успешный коннект — сбрасываем счётчик
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                StatusChanged?.Invoke("Не удалось переподключиться: " + ex.Message);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Читает сообщения до обрыва. true — сервер закрыл соединение штатно,
+    /// false — ошибка сети или тайм-аут тишины.
+    /// Twitch шлёт PING каждые ~5 минут, поэтому тишина дольше 6 минут = мёртвое соединение.
+    /// </summary>
+    private async Task<bool> ReadUntilDropAsync(CancellationToken token)
     {
         try
         {
             while (!token.IsCancellationRequested && _reader != null)
             {
-                var line = await _reader.ReadLineAsync(token);
-                if (line == null) break; // сервер закрыл соединение
+                string? line;
+                // Тайм-аут чтения: ловим тихо умершие TCP-сессии (NAT/Wi-Fi),
+                // на которых ReadLineAsync иначе висел бы вечно
+                using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(token))
+                {
+                    timeout.CancelAfter(TimeSpan.FromMinutes(6));
+                    try
+                    {
+                        line = await _reader.ReadLineAsync(timeout.Token);
+                    }
+                    catch (OperationCanceledException) when (!token.IsCancellationRequested)
+                    {
+                        StatusChanged?.Invoke("Нет данных от Twitch больше 6 минут.");
+                        return false; // мёртвое соединение
+                    }
+                }
+
+                if (line == null) return true; // сервер закрыл соединение
 
                 if (line.StartsWith("PING"))
                 {
@@ -160,16 +226,25 @@ public class TwitchIrcClient : IDisposable
                 if (msg != null)
                     MessageReceived?.Invoke(msg);
             }
-
-            if (!token.IsCancellationRequested)
-                StatusChanged?.Invoke("Соединение закрыто сервером.");
+            return true; // отменено — считаем штатным завершением
         }
-        catch (OperationCanceledException) { /* нормальное отключение */ }
-        catch (Exception ex)
+        catch (OperationCanceledException) { return true; }
+        catch (Exception)
         {
-            if (!token.IsCancellationRequested)
-                ConnectionFailed?.Invoke(ex);
+            // Ошибка сети (обрыв TCP и т.п.) — supervisor переподключится
+            return false;
         }
+    }
+
+    /// <summary>Закрывает текущее TCP-соединение (без остановки supervisor'а).</summary>
+    private void CleanupConnection()
+    {
+        try { _writer?.Dispose(); } catch { }
+        try { _reader?.Dispose(); } catch { }
+        try { _tcp?.Close(); } catch { }
+        _writer = null;
+        _reader = null;
+        _tcp = null;
     }
 
     /// <summary>Достаёт значение тега из префикса @tag=value;... IRC-строки.</summary>
@@ -344,12 +419,7 @@ public class TwitchIrcClient : IDisposable
     {
         _cts?.Cancel();
         _cts = null;
-        try { _writer?.Dispose(); } catch { }
-        try { _reader?.Dispose(); } catch { }
-        try { _tcp?.Close(); } catch { }
-        _writer = null;
-        _reader = null;
-        _tcp = null;
+        CleanupConnection();
     }
 
     public void Dispose() => Disconnect();
