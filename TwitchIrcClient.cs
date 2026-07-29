@@ -265,6 +265,22 @@ public class TwitchIrcClient : IDisposable
         return null;
     }
 
+    /// <summary>Бейджи из тега badges ("moderator/1,two-point-pickle/1") в URL картинок (см. BadgeCatalog).</summary>
+    private static List<string>? ParseBadges(string badgesTag)
+    {
+        List<string>? result = null;
+        foreach (var pair in badgesTag.Split(','))
+        {
+            var slash = pair.IndexOf('/');
+            var name = slash > 0 ? pair[..slash] : pair;
+            var version = slash > 0 ? pair[(slash + 1)..] : "1";
+            var url = BadgeCatalog.Resolve(name, version);
+            if (url != null)
+                (result ??= new List<string>()).Add(url);
+        }
+        return result;
+    }
+
     /// <summary>
     /// Разбор USERNOTICE (алерты): msg-id определяет тип события.
     /// Текст берём из системного сообщения Twitch (system-msg).
@@ -290,6 +306,7 @@ public class TwitchIrcClient : IDisposable
             "giftpaidupgrade" or "primepaidupgrade" => ("⬆", "улучшил подписку!"),
             "raid" => ("⚡", "рейдит канал!"),
             "announcement" => ("📢", "объявление"),
+            "viewermilestone" => ("🔥", "открыл серию просмотров!"), // Watch Streak («Время кое-кого отметить!»)
             _ => ("", ""),
         };
         if (emoji.Length == 0) return null; // неинтересные типы (ритуалы и т.п.)
@@ -389,6 +406,10 @@ public class TwitchIrcClient : IDisposable
         // «Выделить моё сообщение» за баллы канала
         if (tags.TryGetValue("msg-id", out var mtype) && mtype == "highlighted-message")
             msg.IsHighlighted = true;
+
+        // Бейджи (модератор, VIP, саб и т.п.) из тега badges
+        if (tags.TryGetValue("badges", out var badges) && !string.IsNullOrEmpty(badges))
+            msg.Badges = ParseBadges(badges);
 
         // id сообщения — нужен для удаления по CLEARMSG
         if (tags.TryGetValue("id", out var mid) && !string.IsNullOrEmpty(mid))

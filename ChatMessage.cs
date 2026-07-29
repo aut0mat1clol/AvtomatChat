@@ -17,6 +17,9 @@ public class ChatMessage
     /// <summary>ID сообщения из тега id (для удаления по CLEARMSG).</summary>
     public string? MsgId { get; set; }
 
+    /// <summary>URL картинок бейджей (модер, VIP, саб и т.д.) — слева от ника.</summary>
+    public List<string>? Badges { get; set; }
+
     /// <summary>Сообщение /me (ACTION) — курсивом в цвете ника, без двоеточия.</summary>
     public bool IsAction { get; set; }
 

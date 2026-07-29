@@ -63,6 +63,9 @@ public partial class MainWindow : Window
         _7tv.StatusChanged += s => Dispatcher.Invoke(() => StatusLabel.Text = s);
         _ = _7tv.LoadGlobalAsync();
 
+        // Каталог глобальных бейджей Twitch (в фоне; без него — встроенный минимум)
+        _ = BadgeCatalog.LoadAsync();
+
         // Обновление счётчика очереди TTS
         _queueTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         _queueTimer.Tick += (_, _) => QueueLabel.Text = $"В очереди: {_tts.QueueCount}";

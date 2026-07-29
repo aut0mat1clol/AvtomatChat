@@ -220,6 +220,7 @@ public class ObsOverlayServer : IDisposable
                             al = m.IsAlert,   // алерт (саб/рейд)
                             hl = m.IsHighlighted, // выделено за баллы
                             me = m.IsAction,  // /me — курсивом в цвете ника
+                            b = m.Badges,     // URL картинок бейджей
                             del = m.IsDeleted, // удалено модератором
                             // части сообщения: текст или эмоут (e = URL картинки)
                             p = m.Parts?.Select(part => new
@@ -330,6 +331,13 @@ public class ObsOverlayServer : IDisposable
                 margin .35s ease .1s, padding .35s ease .1s;
   }
   .msg .nick { font-weight: 700; }
+  /* Бейджи (модер, VIP, саб...) перед ником */
+  .msg img.badge {
+    height: 18px;
+    vertical-align: -3px;
+    margin-right: 4px;
+    border-radius: 2px;
+  }
   /* /me — весь текст в цвете ника, курсивом (конвенция Twitch) */
   .msg .me { font-style: italic; }
   .msg.sysmsg {
@@ -452,12 +460,13 @@ public class ObsOverlayServer : IDisposable
 
   function buildHtml(m) {
     const time = (MODE === 'streamer' && m.ts) ? `<span class="time">${esc(m.ts)}</span> ` : '';
+    const badges = (m.b || []).map(u => `<img class="badge" src="${esc(u)}">`).join('');
     if (m.del)
-      return `${time}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: <s>${renderBody(m)}</s> <em>— Deleted</em>`;
+      return `${time}${badges}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: <s>${renderBody(m)}</s> <em>— Deleted</em>`;
     if (m.al)  return `${time}${esc(m.u)} ${esc(m.t)}`;
     if (m.sys) return `${time}${esc(m.u)} ${esc(m.t)}`;
-    if (m.me)  return `${time}<span class="me" style="color:${esc(m.c)}"><span class="nick">${esc(m.u)}</span> ${renderBody(m)}</span>`;
-    return `${time}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: ${renderBody(m)}`;
+    if (m.me)  return `${time}${badges}<span class="me" style="color:${esc(m.c)}"><span class="nick">${esc(m.u)}</span> ${renderBody(m)}</span>`;
+    return `${time}${badges}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: ${renderBody(m)}`;
   }
 
   function msgClass(m) {
