@@ -17,6 +17,15 @@ public class ChatMessage
     /// <summary>ID сообщения из тега id (для удаления по CLEARMSG).</summary>
     public string? MsgId { get; set; }
 
+    /// <summary>Сообщение /me (ACTION) — курсивом в цвете ника, без двоеточия.</summary>
+    public bool IsAction { get; set; }
+
+    /// <summary>Выделенное сообщение («Выделить моё сообщение» за баллы канала).</summary>
+    public bool IsHighlighted { get; set; }
+
+    /// <summary>Сквозной номер сообщения (ключ для плавного обновления DOM в оверлее).</summary>
+    public long Seq { get; set; }
+
     /// <summary>Сообщение удалено модератором: в проге — пометка «Deleted», в оверлее — заглушка.</summary>
     public bool IsDeleted { get; set; }
 

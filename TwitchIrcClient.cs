@@ -107,7 +107,9 @@ public class TwitchIrcClient : IDisposable
             if (token.IsCancellationRequested) break;
 
             attempt = normalEnd ? 1 : attempt + 1;
-            var delay = Math.Min(60, 2 * (1 << Math.Min(attempt - 1, 5))); // 2,4,8,16,32,60
+            // Пауза нарастает 2с → 4с → 8с, но не дольше 15с —
+            // чтобы посреди стрима чат возвращался максимально быстро
+            var delay = Math.Min(15, 2 * (1 << Math.Min(attempt - 1, 3))); // 2,4,8,15,15…
             StatusChanged?.Invoke($"Соединение потеряно — переподключение через {delay} с…");
             try { await Task.Delay(TimeSpan.FromSeconds(delay), token); }
             catch (OperationCanceledException) { break; }
@@ -294,6 +296,15 @@ public class TwitchIrcClient : IDisposable
 
         var text = string.IsNullOrWhiteSpace(sysMsg) ? $"{user} {fallback}" : sysMsg;
 
+        // У объявлений (и ресабов) есть текст сообщения — после "USERNOTICE #канал :"
+        var body = ExtractUserNoticeBody(line);
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            text = msgId == "announcement"
+                ? $"{user}: {body}"          // объявление: главное — содержание
+                : $"{text} — {body}";        // ресаб с текстом и т.п.
+        }
+
         return new ChatMessage
         {
             Username = emoji,
@@ -301,6 +312,15 @@ public class TwitchIrcClient : IDisposable
             IsAlert = true,
             ColorHex = "#00E701",
         };
+    }
+
+    /// <summary>Текст после "USERNOTICE #канал :" (может отсутствовать).</summary>
+    private static string? ExtractUserNoticeBody(string line)
+    {
+        var idx = line.IndexOf(" USERNOTICE #", StringComparison.Ordinal);
+        if (idx < 0) return null;
+        var colon = line.IndexOf(" :", idx, StringComparison.Ordinal);
+        return colon < 0 ? null : line[(colon + 2)..];
     }
 
     /// <summary>
@@ -351,11 +371,24 @@ public class TwitchIrcClient : IDisposable
         if (tags.TryGetValue("color", out var c) && c.StartsWith('#') && c.Length == 7)
             color = c;
 
-        // /me action: \x01ACTION текст\x01
-        if (text.StartsWith("\u0001ACTION ") && text.EndsWith('\u0001'))
-            text = text[8..^1];
+        // /me action: \x01ACTION текст\x01. Бывает без завершающего \x01
+        // или с пробелами — парсим терпимо, иначе в чате видно "ACTION ..."
+        var isAction = false;
+        if (text.StartsWith('\u0001'))
+        {
+            var inner = text.Trim('\u0001', ' ');
+            if (inner.StartsWith("ACTION", StringComparison.OrdinalIgnoreCase))
+            {
+                text = inner[6..].TrimStart();
+                isAction = true;
+            }
+        }
 
-        var msg = new ChatMessage { Username = username, Text = text, ColorHex = color };
+        var msg = new ChatMessage { Username = username, Text = text, ColorHex = color, IsAction = isAction };
+
+        // «Выделить моё сообщение» за баллы канала
+        if (tags.TryGetValue("msg-id", out var mtype) && mtype == "highlighted-message")
+            msg.IsHighlighted = true;
 
         // id сообщения — нужен для удаления по CLEARMSG
         if (tags.TryGetValue("id", out var mid) && !string.IsNullOrEmpty(mid))

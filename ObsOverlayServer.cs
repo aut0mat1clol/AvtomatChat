@@ -35,6 +35,12 @@ public class ObsOverlayServer : IDisposable
     /// <summary>Показывать «зашёл/вышел» в OBS-оверлее.</summary>
     public volatile bool ShowJoinsObs;
 
+    /// <summary>Предпросмотр картинок по ссылкам.</summary>
+    public volatile bool LinkPreviews;
+
+    /// <summary>Секунды до исчезновения сообщения в OBS (0 = не исчезают).</summary>
+    public volatile int FadeSeconds;
+
     public ObsOverlayServer(int port = 8085)
     {
         Port = port;
@@ -58,10 +64,13 @@ public class ObsOverlayServer : IDisposable
         try { _listener.Stop(); } catch { }
     }
 
+    private long _nextSeq = 1;
+
     public void AddMessage(ChatMessage msg)
     {
         lock (_lock)
         {
+            msg.Seq = _nextSeq++;
             _messages.Add(msg);
             while (_messages.Count > MaxMessages)
                 _messages.RemoveAt(0);
@@ -196,15 +205,21 @@ public class ObsOverlayServer : IDisposable
                 {
                     snapshot = _messages
                         .Where(m => !m.IsSystem || showJoins)
+                        // В OBS удалённые сообщения убираются полностью, стримеру — остаются
+                        .Where(m => streamer || !m.IsDeleted)
                         .TakeLast(streamer ? MaxMessages : 30)
                         .Select(m => (object)new
                         {
+                            id = m.Seq, // ключ для плавного обновления DOM
                             u = m.Username,
                             t = m.Text,
                             c = m.ColorHex,
                             ts = streamer ? m.TimeString : null, // время — только стримеру
+                            ct = new DateTimeOffset(m.Time).ToUnixTimeMilliseconds(), // для fade
                             sys = m.IsSystem, // системное событие (зашёл/вышел)
                             al = m.IsAlert,   // алерт (саб/рейд)
+                            hl = m.IsHighlighted, // выделено за баллы
+                            me = m.IsAction,  // /me — курсивом в цвете ника
                             del = m.IsDeleted, // удалено модератором
                             // части сообщения: текст или эмоут (e = URL картинки)
                             p = m.Parts?.Select(part => new
@@ -234,7 +249,9 @@ public class ObsOverlayServer : IDisposable
                 // чтобы @import (веб-шрифты) не игнорировался браузером
                 var html = OverlayHtml
                     .Replace("/*EXTRA_CSS*/", GetPresetCss(LayoutPreset))
-                    .Replace("/*USER_CSS*/", BuildFontFaceCss() + (CustomCss ?? ""));
+                    .Replace("/*USER_CSS*/", BuildFontFaceCss() + (CustomCss ?? ""))
+                    .Replace("const FADE_SECONDS = 0;", $"const FADE_SECONDS = {FadeSeconds};")
+                    .Replace("const LINK_PREVIEWS = false;", LinkPreviews ? "const LINK_PREVIEWS = true;" : "const LINK_PREVIEWS = false;");
 
                 // /streamer — окно приложения: тот же стиль, но с фичами для стримера
                 // (время, текст удалённых сообщений, прокрутка, тёмный фон).
@@ -293,9 +310,28 @@ public class ObsOverlayServer : IDisposable
     line-height: 1.35;
     word-wrap: break-word;
     text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 6px rgba(0,0,0,.7);
-    animation: fadein .25s ease-out;
+    overflow: hidden;
+    transition: opacity .3s ease, transform .3s ease;
+  }
+  /* Появление: плавный въезд снизу (класс снимается сразу после вставки) */
+  .msg.appearing {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  /* Исчезновение: затухание + схлопывание высоты — соседи съезжают плавно */
+  .msg.collapsing {
+    opacity: 0;
+    height: 0 !important;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    transition: opacity .35s ease, height .35s ease .1s,
+                margin .35s ease .1s, padding .35s ease .1s;
   }
   .msg .nick { font-weight: 700; }
+  /* /me — весь текст в цвете ника, курсивом (конвенция Twitch) */
+  .msg .me { font-style: italic; }
   .msg.sysmsg {
     color: #adadb8;
     font-style: italic;
@@ -312,6 +348,22 @@ public class ObsOverlayServer : IDisposable
     font-style: italic;
     font-size: 0.85em;
   }
+  /* «Выделить моё сообщение» за баллы канала */
+  .msg.highlighted {
+    background: rgba(145, 71, 255, .25);
+    border-left: 3px solid #9147FF;
+    padding-left: 8px;
+    border-radius: 4px;
+  }
+  /* Ссылки и превью картинок */
+  .msg a.link { color: #6cb9ff; text-decoration: underline; }
+  .msg img.linkpreview {
+    display: block;
+    max-width: 220px;
+    max-height: 160px;
+    border-radius: 6px;
+    margin: 4px 0 2px;
+  }
   /* Стримерский режим: время и удалённые с содержимым */
   .msg .time { color: #7a7a85; font-size: 0.75em; }
   .msg.deleted-full { color: #7a7a85; }
@@ -321,10 +373,6 @@ public class ObsOverlayServer : IDisposable
     height: 26px;
     vertical-align: middle;
     margin: 0 1px;
-  }
-  @keyframes fadein {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: none; }
   }
   #unlock {
     display: none;
@@ -350,6 +398,8 @@ public class ObsOverlayServer : IDisposable
 <div id="chat"></div>
 <script>
   const MODE = 'obs'; // 'obs' | 'streamer' (окно приложения) | 'preview' (тестовые сообщения)
+  const FADE_SECONDS = 0;      // 0 = сообщения не исчезают (подставляется сервером)
+  const LINK_PREVIEWS = false; // предпросмотр картинок по ссылкам (подставляется сервером)
   const chat = document.getElementById('chat');
   let lastJson = '';
 
@@ -359,45 +409,131 @@ public class ObsOverlayServer : IDisposable
     return d.innerHTML;
   }
 
+  // Ссылки: сокращаем до "домен/…", делаем кликабельными (в окне стримера),
+  // а картинки (по расширению) показываем превью, если включено
+  const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/g;
+  const IMG_RE = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
+
+  function renderTextWithLinks(text) {
+    return esc(text).replace(URL_RE, raw => {
+      const url = raw.startsWith('www.') ? 'https://' + raw : raw;
+
+      // Картинка с включённым предпросмотром: показываем только превью, без ссылки.
+      // Если картинка не загрузится — onerror заменит её обратно на ссылку.
+      if (LINK_PREVIEWS && IMG_RE.test(url))
+        return `<img class="linkpreview" src="${url}" loading="lazy" ` +
+               `onerror="this.outerHTML='<a class=link href=${url} target=_blank rel=noreferrer>${esc(shortUrl(url, raw))}</a>'">`;
+
+      return `<a class="link" href="${url}" target="_blank" rel="noreferrer" title="${url}">${esc(shortUrl(url, raw))}</a>`;
+    });
+  }
+
+  function shortUrl(url, raw) {
+    try {
+      const u = new URL(url);
+      return u.hostname.replace(/^www\./, '') + (u.pathname.length > 1 ? '/…' : '');
+    } catch { return raw.slice(0, 30) + '…'; }
+  }
+
   function renderBody(m) {
     // p — части сообщения (текст/эмоут); если их нет, просто текст
-    if (!m.p) return esc(m.t);
+    if (!m.p) return renderTextWithLinks(m.t);
     return m.p.map(part =>
       part.e
         ? `<img class="emote" src="${esc(part.e)}" alt="${esc(part.t)}" title="${esc(part.t)}">`
-        : esc(part.t)
+        : renderTextWithLinks(part.t)
     ).join('');
   }
 
+  // Плавный рендер: DOM обновляется инкрементально (по ключу id сообщения),
+  // ничего не пересоздаётся — ни дёрганий, ни перезагрузки картинок.
+  // Удаление — через CSS-схлопывание, появление — через плавный въезд.
+  const nodes = new Map(); // id -> DOM-элемент
+
+  function buildHtml(m) {
+    const time = (MODE === 'streamer' && m.ts) ? `<span class="time">${esc(m.ts)}</span> ` : '';
+    if (m.del)
+      return `${time}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: <s>${renderBody(m)}</s> <em>— Deleted</em>`;
+    if (m.al)  return `${time}${esc(m.u)} ${esc(m.t)}`;
+    if (m.sys) return `${time}${esc(m.u)} ${esc(m.t)}`;
+    if (m.me)  return `${time}<span class="me" style="color:${esc(m.c)}"><span class="nick">${esc(m.u)}</span> ${renderBody(m)}</span>`;
+    return `${time}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: ${renderBody(m)}`;
+  }
+
+  function msgClass(m) {
+    let cls = 'msg';
+    if (m.del) cls += ' deleted-full';
+    else if (m.al) cls += ' alert';
+    else if (m.sys) cls += ' sysmsg';
+    else if (m.hl) cls += ' highlighted';
+    return cls;
+  }
+
+  function removeSmooth(el) {
+    if (el.dataset.removing) return;
+    el.dataset.removing = '1';
+    // Фиксируем текущую высоту и плавно схлопываем — соседи съедут без прыжка
+    el.style.height = el.offsetHeight + 'px';
+    el.offsetHeight; // reflow
+    el.classList.add('collapsing');
+    el.addEventListener('transitionend', () => el.remove(), { once: true });
+    setTimeout(() => el.remove(), 800); // страховка
+  }
+
   function render(msgs) {
-    // Держим прокрутку внизу, только если пользователь и так был внизу
     const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 60;
+    const now = Date.now();
+    const alive = new Set();
 
-    chat.innerHTML = msgs.map(m => {
-      const time = (MODE === 'streamer' && m.ts) ? `<span class="time">${esc(m.ts)}</span> ` : '';
-      if (m.del) {
-        // Стримеру — контент с зачёркиванием и пометкой, зрителям — заглушка
-        return MODE === 'streamer'
-          ? `<div class="msg deleted-full">${time}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: <s>${renderBody(m)}</s> <em>— Deleted</em></div>`
-          : `<div class="msg deleted">Сообщение удалено</div>`;
+    let prev = null; // последний обработанный элемент — для сохранения порядка
+    for (const m of msgs) {
+      // Fade: в OBS сообщения старше FADE_SECONDS плавно убираются
+      if (FADE_SECONDS > 0 && MODE !== 'streamer' && m.ct && (now - m.ct) / 1000 > FADE_SECONDS)
+        continue;
+
+      alive.add(String(m.id));
+      let el = nodes.get(String(m.id));
+      const html = buildHtml(m);
+      const cls = msgClass(m);
+
+      if (!el) {
+        el = document.createElement('div');
+        el.className = cls + ' appearing';
+        el.dataset.id = String(m.id);
+        el.innerHTML = html;
+        // Вставляем после prev (сохраняем порядок), иначе в конец
+        if (prev && prev.nextSibling) chat.insertBefore(el, prev.nextSibling);
+        else chat.appendChild(el);
+        nodes.set(String(m.id), el);
+        requestAnimationFrame(() => el.classList.remove('appearing'));
+      } else {
+        // Обновляем только если изменилось (удаление/пометки) — картинки не перезагружаются
+        if (el.className.replace(' appearing', '') !== cls) el.className = cls;
+        if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
       }
-      if (m.al)  return `<div class="msg alert">${time}${esc(m.u)} ${esc(m.t)}</div>`;
-      if (m.sys) return `<div class="msg sysmsg">${time}${esc(m.u)} ${esc(m.t)}</div>`;
-      return `<div class="msg">${time}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: ${renderBody(m)}</div>`;
-    }).join('');
+      prev = el;
+    }
 
-    if (nearBottom) window.scrollTo(0, document.body.scrollHeight);
+    // Убираем исчезнувшие (fade-аут, удалённые в OBS, вытесненные из истории)
+    for (const [id, el] of nodes) {
+      if (!alive.has(id)) {
+        nodes.delete(id);
+        removeSmooth(el);
+      }
+    }
+
+    if (nearBottom) window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   }
 
   // Тестовые сообщения для предпросмотра лайаута
   const SAMPLE = [
-    {u:'Streamer', c:'#00E701', t:'Привет, чат! Начинаем стрим'},
-    {u:'Viewer42', c:'#FF6BD6', t:'привет PogChamp', p:[{t:'привет '},{t:'PogChamp', e:'https://static-cdn.jtvnw.net/emoticons/v2/305954156/default/dark/2.0'}]},
-    {u:'CoolNick', c:'#4BA1FF', t:'ооо, новый оверлей, выглядит топово'},
-    {u:'🎉', t:'CoolUser subscribed at Tier 1.', al:true},
-    {u:'toxic_user', t:'тут было плохое сообщение', del:true},
-    {u:'lurker99', t:'зашёл в чат', sys:true},
-    {u:'Модератор', c:'#00E701', t:'длинное сообщение, чтобы проверить перенос строк и то, как лайаут ведёт себя с многострочным текстом'},
+    {id:1, u:'Streamer', c:'#00E701', t:'Привет, чат! Начинаем стрим'},
+    {id:2, u:'Viewer42', c:'#FF6BD6', t:'привет PogChamp', p:[{t:'привет '},{t:'PogChamp', e:'https://static-cdn.jtvnw.net/emoticons/v2/305954156/default/dark/2.0'}]},
+    {id:3, u:'CoolNick', c:'#4BA1FF', t:'ооо, новый оверлей, выглядит топово'},
+    {id:4, u:'🎉', t:'CoolUser subscribed at Tier 1.', al:true},
+    {id:5, u:'toxic_user', t:'тут было плохое сообщение', del:true},
+    {id:6, u:'lurker99', t:'зашёл в чат', sys:true},
+    {id:7, u:'Модератор', c:'#00E701', t:'длинное сообщение, чтобы проверить перенос строк и то, как лайаут ведёт себя с многострочным текстом'},
   ];
 
   async function tick() {
@@ -405,7 +541,8 @@ public class ObsOverlayServer : IDisposable
     try {
       const r = await fetch('/messages' + (MODE === 'streamer' ? '?view=streamer' : ''));
       const txt = await r.text();
-      if (txt === lastJson) return; // ничего нового
+      // При включённом fade перерисовываем всегда (возраст сообщений меняется)
+      if (txt === lastJson && !(FADE_SECONDS > 0 && MODE !== 'streamer')) return;
       lastJson = txt;
       render(JSON.parse(txt));
     } catch (e) { /* приложение закрыто — просто ждём */ }

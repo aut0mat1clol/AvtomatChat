@@ -67,6 +67,14 @@ public partial class SettingsWindow : Window
         _main.ApplySettingsFromWindow(this);
     }
 
+    private void FadeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (!_initialized) return;
+        var s = (int)e.NewValue;
+        FadeLabel.Text = s == 0 ? "выкл" : s + " с";
+        _main.ApplySettingsFromWindow(this);
+    }
+
     private void TestButton_Click(object sender, RoutedEventArgs e) => _main.SpeakTestPhrase();
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();

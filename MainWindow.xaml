@@ -125,6 +125,8 @@
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                         shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <Button x:Name="CompactButton" Style="{StaticResource CaptionButton}" Content="&#xE8A0;"
+                        Click="CompactButton_Click" ToolTip="Только чат (компакт-режим)"/>
                 <Button Style="{StaticResource CaptionButton}" Content="&#xE921;"
                         Click="Minimize_Click" ToolTip="Свернуть"/>
                 <Button x:Name="MaxRestoreButton" Style="{StaticResource CaptionButton}" Content="&#xE922;"
@@ -135,7 +137,7 @@
         </Grid>
 
         <!-- Содержимое -->
-        <Grid Grid.Row="1" Margin="12">
+        <Grid x:Name="ContentGrid" Grid.Row="1" Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -144,7 +146,7 @@
         </Grid.RowDefinitions>
 
         <!-- Верхняя панель подключения -->
-        <Border Grid.Row="0" Background="{StaticResource PanelBrush}"
+        <Border x:Name="TopPanel" Grid.Row="0" Background="{StaticResource PanelBrush}"
                 CornerRadius="6" Padding="10" Margin="0,0,0,10">
             <DockPanel>
                 <TextBlock Text="Канал:" VerticalAlignment="Center" Margin="0,0,8,0"/>
@@ -198,7 +200,7 @@
         </Border>
 
         <!-- Кнопки TTS под чатом -->
-        <Border Grid.Row="3" Background="{StaticResource PanelBrush}"
+        <Border x:Name="BottomPanel" Grid.Row="3" Background="{StaticResource PanelBrush}"
                 CornerRadius="6" Padding="10,6" Margin="0,10,0,0">
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">

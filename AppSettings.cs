@@ -62,6 +62,10 @@ public class AppSettings
     public string OverlayPreset { get; set; } = "classic";
     /// <summary>Пользовательский CSS для оверлея.</summary>
     public string OverlayCustomCss { get; set; } = "";
+    /// <summary>Предпросмотр картинок по ссылкам (в чате и оверлее).</summary>
+    public bool LinkPreviews { get; set; }
+    /// <summary>Через сколько секунд сообщения исчезают в OBS-оверлее (0 = никогда).</summary>
+    public int OverlayFadeSeconds { get; set; }
 
     [JsonIgnore]
     public static string FilePath => Path.Combine(

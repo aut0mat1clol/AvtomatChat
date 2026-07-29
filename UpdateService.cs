@@ -50,38 +50,40 @@ public class UpdateService
 
     /// <summary>
     /// Текст «что нового» — описание релиза с GitHub.
-    /// Основной способ — HTML-страница релиза (без лимитов API),
-    /// запасной — API. null — если описание недоступно.
+    /// Основной способ — Atom-фид релизов (/releases.atom): стабильный XML,
+    /// парсится XmlDocument'ом и не расходует лимит GitHub API
+    /// (60 анонимных запросов/час на IP — уже дважды ловили его на живых пользователях).
+    /// Запасной — API (releases/tags/{tag} → body). null — если описание недоступно.
     /// </summary>
     public async Task<string?> GetReleaseNotesAsync(string tagName)
     {
-        return await GetNotesViaPageAsync(tagName) ?? await GetNotesViaApiAsync(tagName);
+        return await GetNotesViaAtomAsync(tagName) ?? await GetNotesViaApiAsync(tagName);
     }
 
-    /// <summary>Описание релиза со страницы github.com/.../releases/tag/X — rate limit не расходуется.</summary>
-    private static async Task<string?> GetNotesViaPageAsync(string tagName)
+    /// <summary>Описание релиза из Atom-фида (XML со стабильной схемой, без лимитов).</summary>
+    private static async Task<string?> GetNotesViaAtomAsync(string tagName)
     {
         try
         {
-            var html = await Http.GetStringAsync(
-                $"https://github.com/{Owner}/{Repo}/releases/tag/{Uri.EscapeDataString(tagName)}");
+            var xml = await Http.GetStringAsync(
+                $"https://github.com/{Owner}/{Repo}/releases.atom");
 
-            // Описание релиза — в <div class="markdown-body...">…</div>
-            var m = System.Text.RegularExpressions.Regex.Match(
-                html, "<div[^>]*class=\"[^\"]*markdown-body[^\"]*\"[^>]*>(.*?)</div>",
-                System.Text.RegularExpressions.RegexOptions.Singleline);
-            if (!m.Success) return null;
+            var doc = new System.Xml.XmlDocument();
+            doc.LoadXml(xml);
+            var ns = new System.Xml.XmlNamespaceManager(doc.NameTable);
+            ns.AddNamespace("a", "http://www.w3.org/2005/Atom");
 
-            var text = m.Groups[1].Value;
-            // <li> — в маркеры, <br>/<p> — в переносы строк, прочие теги — прочь
-            text = System.Text.RegularExpressions.Regex.Replace(text, "<li[^>]*>", "\n• ");
-            text = System.Text.RegularExpressions.Regex.Replace(text, "<(br|/p|/h\\d)[^>]*>", "\n");
-            text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", "");
-            text = System.Net.WebUtility.HtmlDecode(text);
-            // схлопываем лишние пустые строки
-            text = System.Text.RegularExpressions.Regex.Replace(text.Trim(), "\n{3,}", "\n\n");
+            // Ищем entry с нужным тегом: <id> заканчивается на "/{tag}"
+            foreach (System.Xml.XmlNode entry in doc.SelectNodes("//a:entry", ns)!)
+            {
+                var id = entry.SelectSingleNode("a:id", ns)?.InnerText ?? "";
+                if (!id.EndsWith("/" + tagName, StringComparison.Ordinal)) continue;
 
-            return string.IsNullOrWhiteSpace(text) ? null : text;
+                // content: html-разметка описания (уже декодированная XmlDocument'ом)
+                var content = entry.SelectSingleNode("a:content", ns)?.InnerText;
+                return string.IsNullOrWhiteSpace(content) ? null : HtmlToPlainText(content);
+            }
+            return null; // тег не найден в фиде (фид отдаёт только последние ~10 релизов)
         }
         catch
         {
@@ -89,14 +91,56 @@ public class UpdateService
         }
     }
 
-    /// <summary>Запасной способ — GitHub API (может упереться в rate limit).</summary>
+    /// <summary>
+    /// Простая конвертация HTML из фида в текст. Разметку генерирует GitHub
+    /// из markdown, поэтому набор тегов известен: p, ul/li, br, em/strong/code.
+    /// </summary>
+    private static string HtmlToPlainText(string html)
+    {
+        var sb = new StringBuilder(html.Length);
+        var i = 0;
+        while (i < html.Length)
+        {
+            if (html[i] == '<')
+            {
+                var close = html.IndexOf('>', i);
+                if (close < 0) break;
+                var tag = html[(i + 1)..close].TrimEnd('/').Trim().ToLowerInvariant();
+                // теги-переносы; <li> — маркер списка
+                if (tag == "li") sb.Append("\n• ");
+                else if (tag is "br" or "/p" or "/ul" or "/ol" || tag.StartsWith("/h")) sb.Append('\n');
+                i = close + 1;
+            }
+            else
+            {
+                sb.Append(html[i]);
+                i++;
+            }
+        }
+
+        var text = System.Net.WebUtility.HtmlDecode(sb.ToString());
+        // схлопываем тройные+ пустые строки без regex
+        while (text.Contains("\n\n\n")) text = text.Replace("\n\n\n", "\n\n");
+        return text.Trim();
+    }
+
+    /// <summary>
+    /// Запасной способ — GitHub API через releases/latest (может упереться в rate limit).
+    /// «Подробнее» всегда запрашивается для последнего релиза, поэтому latest подходит;
+    /// тег из ответа сверяем — на случай, если релиз сменился между проверкой и кликом.
+    /// </summary>
     private async Task<string?> GetNotesViaApiAsync(string tagName)
     {
         try
         {
             var json = await Http.GetStringAsync(
-                $"https://api.github.com/repos/{Owner}/{Repo}/releases/tags/{Uri.EscapeDataString(tagName)}");
+                $"https://api.github.com/repos/{Owner}/{Repo}/releases/latest");
             using var doc = JsonDocument.Parse(json);
+
+            var tag = doc.RootElement.TryGetProperty("tag_name", out var t) ? t.GetString() : null;
+            if (!string.Equals(tag, tagName, StringComparison.OrdinalIgnoreCase))
+                return null; // latest уже другой — не показываем чужой changelog
+
             var body = doc.RootElement.TryGetProperty("body", out var b) ? b.GetString() : null;
             return string.IsNullOrWhiteSpace(body) ? null : CleanMarkdown(body);
         }
