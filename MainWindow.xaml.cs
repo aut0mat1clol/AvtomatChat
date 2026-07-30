@@ -86,6 +86,8 @@ public partial class MainWindow : Window
         _obs.ShowJoinsLocal = _settings.ShowJoinsLocal;
         _obs.ShowJoinsObs = _settings.ShowJoinsObs;
         _obs.LinkPreviews = _settings.LinkPreviews;
+        _obs.LinkPreviewMode = _settings.LinkPreviewMode;
+        _obs.SetLinkPreviewWhitelist(_settings.LinkPreviewWhitelist);
         _obs.FadeSeconds = _settings.OverlayFadeSeconds;
 
         // Чат в окне: встроенный Chromium грузит /streamer (тот же вид, что в OBS)
@@ -497,6 +499,13 @@ public partial class MainWindow : Window
         if (w.PresetCombo.SelectedItem == null) w.PresetCombo.SelectedIndex = 0;
         w.CustomCssBox.Text = _settings.OverlayCustomCss;
         w.LinkPreviewsCheck.IsChecked = _settings.LinkPreviews;
+        w.PreviewModeCombo.SelectedIndex = _settings.LinkPreviewMode switch
+        {
+            "trusted" => 1,
+            "whitelist" => 2,
+            _ => 0, // all
+        };
+        w.PreviewWhitelistBox.Text = _settings.LinkPreviewWhitelist;
         w.FadeSlider.Value = Math.Clamp(_settings.OverlayFadeSeconds, 0, 120);
         w.FadeLabel.Text = _settings.OverlayFadeSeconds == 0 ? "выкл" : _settings.OverlayFadeSeconds + " с";
 
@@ -547,6 +556,13 @@ public partial class MainWindow : Window
             _settings.OverlayPreset = preset.Id;
         _settings.OverlayCustomCss = w.CustomCssBox.Text;
         _settings.LinkPreviews = w.LinkPreviewsCheck.IsChecked == true;
+        _settings.LinkPreviewMode = w.PreviewModeCombo.SelectedIndex switch
+        {
+            1 => "trusted",
+            2 => "whitelist",
+            _ => "all",
+        };
+        _settings.LinkPreviewWhitelist = w.PreviewWhitelistBox.Text;
         _settings.OverlayFadeSeconds = (int)w.FadeSlider.Value;
         var layoutChanged = _obs.LayoutPreset != _settings.OverlayPreset
                             || _obs.CustomCss != _settings.OverlayCustomCss
@@ -555,6 +571,10 @@ public partial class MainWindow : Window
         _obs.LayoutPreset = _settings.OverlayPreset;
         _obs.CustomCss = _settings.OverlayCustomCss;
         _obs.LinkPreviews = _settings.LinkPreviews;
+        // Режим и белый список применяются на лету: сервер пересчитает флаг lp
+        // в /messages, JS сам перерисует изменившиеся сообщения (без перезагрузки)
+        _obs.LinkPreviewMode = _settings.LinkPreviewMode;
+        _obs.SetLinkPreviewWhitelist(_settings.LinkPreviewWhitelist);
         _obs.FadeSeconds = _settings.OverlayFadeSeconds;
         if (layoutChanged) ReloadChatView(); // применяем лайаут к чату в окне
         if (w.VoiceCombo.SelectedItem is SettingsWindow.VoiceItem item)

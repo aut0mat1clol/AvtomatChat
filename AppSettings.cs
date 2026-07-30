@@ -77,6 +77,10 @@ public class AppSettings
     public string OverlayCustomCss { get; set; } = "";
     /// <summary>Предпросмотр картинок по ссылкам (в чате и оверлее).</summary>
     public bool LinkPreviews { get; set; }
+    /// <summary>Кому показывать превью: all (всем) / trusted (стример, модеры, VIP + белый список) / whitelist (только белый список).</summary>
+    public string LinkPreviewMode { get; set; } = "all";
+    /// <summary>Белый список ников для превью (через запятую, регистр не важен).</summary>
+    public string LinkPreviewWhitelist { get; set; } = "";
     /// <summary>Через сколько секунд сообщения исчезают в OBS-оверлее (0 = никогда).</summary>
     public int OverlayFadeSeconds { get; set; }
 

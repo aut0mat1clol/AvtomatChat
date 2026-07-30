@@ -289,6 +289,27 @@
                                   Checked="Setting_Changed" Unchecked="Setting_Changed"
                                   ToolTip="Ссылки на png/jpg/gif/webp показываются миниатюрой в чате и оверлее"/>
 
+                        <TextBlock Text="Чьи ссылки показывать картинкой:" Style="{StaticResource SubTitle}"/>
+                        <ComboBox x:Name="PreviewModeCombo" SelectionChanged="Setting_Changed_Sel"
+                                  ToolTip="Защита от вброса непотребных картинок на стрим: превью только от доверенных зрителей">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" Foreground="#FF0E0E10"/>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                            <ComboBox.Items>
+                                <system:String xmlns:system="clr-namespace:System;assembly=System.Runtime">Всех зрителей</system:String>
+                                <system:String xmlns:system="clr-namespace:System;assembly=System.Runtime">Модеров, VIP и белого списка</system:String>
+                                <system:String xmlns:system="clr-namespace:System;assembly=System.Runtime">Только белого списка</system:String>
+                            </ComboBox.Items>
+                        </ComboBox>
+
+                        <TextBlock Text="Белый список для превью:" Style="{StaticResource SubTitle}"/>
+                        <TextBox x:Name="PreviewWhitelistBox" TextWrapping="Wrap" AcceptsReturn="False"
+                                 MinHeight="44" VerticalScrollBarVisibility="Auto"
+                                 TextChanged="Setting_Changed_Text"
+                                 ToolTip="Ники через запятую (регистр не важен). Их ссылки показываются картинкой; у остальных остаются обычной ссылкой. Стример доверен всегда."/>
+
                         <TextBlock Style="{StaticResource SubTitle}">
                             <Run Text="Исчезание сообщений в OBS: "/><Run x:Name="FadeLabel" Text="выкл"/>
                         </TextBlock>

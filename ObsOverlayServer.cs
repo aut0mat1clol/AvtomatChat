@@ -38,6 +38,34 @@ public class ObsOverlayServer : IDisposable
     /// <summary>Предпросмотр картинок по ссылкам.</summary>
     public volatile bool LinkPreviews;
 
+    /// <summary>Кому показывать превью: all (всем) / trusted (стример+модеры+VIP+белый список) / whitelist (стример+белый список).</summary>
+    public volatile string LinkPreviewMode = "all";
+
+    /// <summary>Белый список ников для превью (сравнение без учёта регистра).</summary>
+    private volatile HashSet<string> _previewWhitelist = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Обновить белый список превью из строки «ник1, ник2».</summary>
+    public void SetLinkPreviewWhitelist(string commaSeparated)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in (commaSeparated ?? "").Split(','))
+        {
+            var trimmed = name.Trim();
+            if (trimmed.Length > 0) set.Add(trimmed);
+        }
+        _previewWhitelist = set; // атомарная подмена — без блокировок
+    }
+
+    /// <summary>Можно ли рендерить превью картинок для сообщений этого автора.</summary>
+    private bool PreviewAllowed(ChatMessage m) => LinkPreviewMode switch
+    {
+        // Доверенные роли: стример, модераторы, VIP + белый список
+        "trusted" => m.IsBroadcaster || m.IsModerator || m.IsVip || _previewWhitelist.Contains(m.Username),
+        // Только белый список (стример всегда доверен — это его канал)
+        "whitelist" => m.IsBroadcaster || _previewWhitelist.Contains(m.Username),
+        _ => true, // all
+    };
+
     /// <summary>Секунды до исчезновения сообщения в OBS (0 = не исчезают).</summary>
     public volatile int FadeSeconds;
 
@@ -223,6 +251,7 @@ public class ObsOverlayServer : IDisposable
                             me = m.IsAction,  // /me — курсивом в цвете ника
                             b = m.Badges,     // URL картинок бейджей
                             del = m.IsDeleted, // удалено модератором
+                            lp = PreviewAllowed(m), // можно ли превью картинок от этого автора
                             // части сообщения: текст или эмоут (e = URL картинки)
                             p = m.Parts?.Select(part => new
                             {
@@ -429,7 +458,7 @@ public class ObsOverlayServer : IDisposable
   // а картинки (по расширению) показываем превью, если включено
   const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/g;
 
-  function renderTextWithLinks(text) {
+  function renderTextWithLinks(text, allowPreview) {
     return esc(text).replace(URL_RE, raw => {
       const url = raw.startsWith('www.') ? 'https://' + raw : raw;
 
@@ -437,7 +466,8 @@ public class ObsOverlayServer : IDisposable
       // работает и для avif, и для ссылок без расширения (femboy.beauty/xxx).
       // Если это не картинка (обычный сайт) — обработчик ошибок ниже
       // заменит её обратно на текстовую ссылку.
-      if (LINK_PREVIEWS)
+      // allowPreview — фильтр по автору (режим «все / доверенные / белый список»).
+      if (LINK_PREVIEWS && allowPreview)
         return `<img class="linkpreview" src="${esc(url)}" loading="lazy"` +
                ` data-href="${esc(url)}" data-short="${esc(shortUrl(url, raw))}">`;
 
@@ -468,12 +498,15 @@ public class ObsOverlayServer : IDisposable
   }
 
   function renderBody(m) {
+    // lp — сервер разрешил превью картинок для этого автора
+    // (undefined в старых данных/preview трактуем как «можно»)
+    const allowPreview = m.lp !== false;
     // p — части сообщения (текст/эмоут); если их нет, просто текст
-    if (!m.p) return renderTextWithLinks(m.t);
+    if (!m.p) return renderTextWithLinks(m.t, allowPreview);
     return m.p.map(part =>
       part.e
         ? `<img class="emote" src="${esc(part.e)}" alt="${esc(part.t)}" title="${esc(part.t)}">`
-        : renderTextWithLinks(part.t)
+        : renderTextWithLinks(part.t, allowPreview)
     ).join('');
   }
 

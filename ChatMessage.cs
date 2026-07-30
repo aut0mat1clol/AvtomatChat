@@ -23,6 +23,15 @@ public class ChatMessage
     /// <summary>URL картинок бейджей (модер, VIP, саб и т.д.) — слева от ника.</summary>
     public List<string>? Badges { get; set; }
 
+    /// <summary>Автор — стример (бейдж broadcaster).</summary>
+    public bool IsBroadcaster { get; set; }
+
+    /// <summary>Автор — модератор канала (бейдж или тег mod=1).</summary>
+    public bool IsModerator { get; set; }
+
+    /// <summary>Автор — VIP канала (бейдж или тег vip=1).</summary>
+    public bool IsVip { get; set; }
+
     /// <summary>Сообщение /me (ACTION) — курсивом в цвете ника, без двоеточия.</summary>
     public bool IsAction { get; set; }
 

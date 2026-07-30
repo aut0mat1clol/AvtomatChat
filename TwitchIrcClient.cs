@@ -411,6 +411,23 @@ public class TwitchIrcClient : IDisposable
         if (tags.TryGetValue("badges", out var badges) && !string.IsNullOrEmpty(badges))
             msg.Badges = ParseBadges(badges);
 
+        // Роли автора — для фильтрации превью картинок (кто угодно не должен
+        // светить произвольные ссылки на стриме). Twitch дублирует роль
+        // и тегами (mod=1, vip=1), и бейджами — проверяем и то, и другое.
+        if (!string.IsNullOrEmpty(badges))
+        {
+            foreach (var pair in badges.Split(','))
+            {
+                var slash = pair.IndexOf('/');
+                var set = slash > 0 ? pair[..slash] : pair;
+                if (set == "broadcaster") msg.IsBroadcaster = true;
+                else if (set == "moderator") msg.IsModerator = true;
+                else if (set == "vip") msg.IsVip = true;
+            }
+        }
+        if (tags.TryGetValue("mod", out var modTag) && modTag == "1") msg.IsModerator = true;
+        if (tags.TryGetValue("vip", out var vipTag) && vipTag == "1") msg.IsVip = true;
+
         // id сообщения — нужен для удаления по CLEARMSG
         if (tags.TryGetValue("id", out var mid) && !string.IsNullOrEmpty(mid))
             msg.MsgId = mid;
