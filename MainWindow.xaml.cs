@@ -189,7 +189,7 @@ public partial class MainWindow : Window
 
     /// <summary>Поле ввода видно, когда есть и логин, и подключение к каналу.</summary>
     private void UpdateSendPanel() =>
-        SendPanel.Visibility = _auth.IsLoggedIn && _connected && !_compactMode
+        SendPanel.Visibility = _auth.IsLoggedIn && _connected
             ? Visibility.Visible : Visibility.Collapsed;
 
     private async void SendButton_Click(object sender, RoutedEventArgs e) => await SendMessageAsync();
@@ -731,6 +731,7 @@ public partial class MainWindow : Window
         UpdateBanner.Visibility = compact ? Visibility.Collapsed :
             (_pendingUpdate != null ? Visibility.Visible : Visibility.Collapsed);
         ContentGrid.Margin = compact ? new Thickness(0) : new Thickness(12);
+        SendPanel.Margin = compact ? new Thickness(0) : new Thickness(0, 10, 0, 0);
         UpdateSendPanel();
         CompactButton.Content = compact ? "\uE8A1" : "\uE8A0"; // BackToWindow / FullScreen
         CompactButton.ToolTip = compact ? "Вернуть интерфейс" : "Только чат (компакт-режим)";
