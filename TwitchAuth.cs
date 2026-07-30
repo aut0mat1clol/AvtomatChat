@@ -30,7 +30,7 @@ public class TwitchAuth
             new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["client_id"] = ClientId,
-                ["scopes"] = "moderator:read:followers moderator:read:shoutouts",
+                ["scopes"] = "moderator:read:followers moderator:read:shoutouts user:write:chat",
             }));
         var json = await resp.Content.ReadAsStringAsync();
         if (!resp.IsSuccessStatusCode)
@@ -145,5 +145,58 @@ public class TwitchAuth
         RefreshToken = "";
         UserId = "";
         UserLogin = "";
+    }
+
+    /// <summary>
+    /// Отправка сообщения в чат канала через Helix (нужен скоуп user:write:chat).
+    /// Возвращает null при успехе или текст ошибки.
+    /// </summary>
+    public async Task<string?> SendChatMessageAsync(string broadcasterId, string message, bool isRetry = false)
+    {
+        if (!IsLoggedIn) return "не авторизован";
+
+        var body = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            broadcaster_id = broadcasterId,
+            sender_id = UserId,
+            message,
+        });
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.twitch.tv/helix/chat/messages")
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+        };
+        req.Headers.Add("Authorization", "Bearer " + AccessToken);
+        req.Headers.Add("Client-Id", ClientId);
+
+        var resp = await Http.SendAsync(req);
+        if (resp.IsSuccessStatusCode)
+        {
+            // Helix может вернуть 200 с is_sent=false (сообщение отклонено автомодом и т.п.)
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+                var data = doc.RootElement.GetProperty("data")[0];
+                if (!data.GetProperty("is_sent").GetBoolean())
+                {
+                    var reason = data.TryGetProperty("drop_reason", out var dr) &&
+                                 dr.TryGetProperty("message", out var dm) ? dm.GetString() : "отклонено";
+                    return "сообщение не отправлено: " + reason;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        // 401 — токен истёк: обновляем и пробуем ещё раз
+        if (!isRetry && resp.StatusCode == System.Net.HttpStatusCode.Unauthorized && await TryRefreshAsync())
+            return await SendChatMessageAsync(broadcasterId, message, isRetry: true);
+
+        // 403 без нужного скоупа — у пользователя старый токен, нужен перелогин
+        if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
+            resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            return "нет прав на отправку — выйди и войди в аккаунт заново (Настройки → Аккаунт)";
+
+        return "ошибка " + (int)resp.StatusCode;
     }
 }

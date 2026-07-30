@@ -6,8 +6,41 @@ namespace AvtomatChat;
 
 public partial class App : System.Windows.Application
 {
+    private static System.Threading.Mutex? _instanceMutex;
+
+    /// <summary>Имя события для «разбудить первый экземпляр».</summary>
+    private const string ShowEventName = "AvtomatChat_ShowWindow";
+
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Single instance: второй экземпляр не запускается (иначе два процесса
+        // дерутся за порт 8085, и чат в окне выглядит пустым) — вместо этого
+        // будим окно первого экземпляра (в т.ч. достаём из трея).
+        _instanceMutex = new System.Threading.Mutex(true, "AvtomatChat_SingleInstance", out var isNew);
+        if (!isNew)
+        {
+            try
+            {
+                using var evt = System.Threading.EventWaitHandle.OpenExisting(ShowEventName);
+                evt.Set(); // сигнал первому экземпляру показать окно
+            }
+            catch { }
+            Shutdown();
+            return;
+        }
+
+        // Слушаем сигналы от повторных запусков
+        var showEvent = new System.Threading.EventWaitHandle(
+            false, System.Threading.EventResetMode.AutoReset, ShowEventName);
+        var listener = new System.Threading.Thread(() =>
+        {
+            while (showEvent.WaitOne())
+                Dispatcher.BeginInvoke(() =>
+                    (MainWindow as MainWindow)?.ShowFromSecondInstance());
+        })
+        { IsBackground = true };
+        listener.Start();
+
         // Глобальный перехват ошибок: вместо тихого падения показываем
         // текст ошибки и пишем его в crash.log рядом с exe.
         DispatcherUnhandledException += OnDispatcherUnhandledException;

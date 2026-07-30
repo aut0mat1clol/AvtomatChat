@@ -143,6 +143,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Верхняя панель подключения -->
@@ -199,8 +200,20 @@
             </Grid>
         </Border>
 
+        <!-- Поле отправки сообщений (видно только залогиненным) -->
+        <Border x:Name="SendPanel" Grid.Row="3" Background="{StaticResource PanelBrush}"
+                CornerRadius="6" Padding="8,6" Margin="0,10,0,0" Visibility="Collapsed">
+            <DockPanel>
+                <Button x:Name="SendButton" Content="Отправить" DockPanel.Dock="Right"
+                        Margin="8,0,0,0" Padding="12,4" Click="SendButton_Click"/>
+                <TextBox x:Name="MessageBox" VerticalAlignment="Center" MaxLength="500"
+                         KeyDown="MessageBox_KeyDown"
+                         ToolTip="Enter — отправить. Сообщение уйдёт в чат от твоего имени."/>
+            </DockPanel>
+        </Border>
+
         <!-- Кнопки TTS под чатом -->
-        <Border x:Name="BottomPanel" Grid.Row="3" Background="{StaticResource PanelBrush}"
+        <Border x:Name="BottomPanel" Grid.Row="4" Background="{StaticResource PanelBrush}"
                 CornerRadius="6" Padding="10,6" Margin="0,10,0,0">
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">

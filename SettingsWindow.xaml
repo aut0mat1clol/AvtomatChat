@@ -302,9 +302,9 @@
                                  TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                                  FontFamily="Consolas" FontSize="12"
                                  TextChanged="Setting_Changed_Text"/>
-                        <TextBlock Text="Классы: .msg — сообщение, .msg .nick — ник, .msg img.emote — эмоут, .msg img.badge — значок, .msg.alert — алерт, .msg.highlighted — за баллы, .msg.sysmsg — зашёл/вышел, .msg .me — /me. Шрифты: любой установленный в Windows. После изменений обнови кэш источника в OBS."
-                                   FontSize="11" Foreground="{StaticResource MutedBrush}"
-                                   TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        <Button Content="Справка по CSS" Margin="0,8,0,0" HorizontalAlignment="Left"
+                                Click="CssHelpButton_Click"
+                                ToolTip="Все классы оверлея с описаниями и примерами"/>
                     </StackPanel>
 
                     <!-- ===== Аккаунт ===== -->

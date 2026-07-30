@@ -428,21 +428,37 @@ public class ObsOverlayServer : IDisposable
   // Ссылки: сокращаем до "домен/…", делаем кликабельными (в окне стримера),
   // а картинки (по расширению) показываем превью, если включено
   const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/g;
-  const IMG_RE = /\.(png|jpe?g|gif|webp)(\?.*)?$/i;
 
   function renderTextWithLinks(text) {
     return esc(text).replace(URL_RE, raw => {
       const url = raw.startsWith('www.') ? 'https://' + raw : raw;
 
-      // Картинка с включённым предпросмотром: показываем только превью, без ссылки.
-      // Если картинка не загрузится — onerror заменит её обратно на ссылку.
-      if (LINK_PREVIEWS && IMG_RE.test(url))
-        return `<img class="linkpreview" src="${url}" loading="lazy" ` +
-               `onerror="this.outerHTML='<a class=link href=${url} target=_blank rel=noreferrer>${esc(shortUrl(url, raw))}</a>'">`;
+      // Предпросмотр включён: пробуем показать ЛЮБУЮ ссылку картинкой —
+      // работает и для avif, и для ссылок без расширения (femboy.beauty/xxx).
+      // Если это не картинка (обычный сайт) — обработчик ошибок ниже
+      // заменит её обратно на текстовую ссылку.
+      if (LINK_PREVIEWS)
+        return `<img class="linkpreview" src="${esc(url)}" loading="lazy"` +
+               ` data-href="${esc(url)}" data-short="${esc(shortUrl(url, raw))}">`;
 
-      return `<a class="link" href="${url}" target="_blank" rel="noreferrer" title="${url}">${esc(shortUrl(url, raw))}</a>`;
+      return `<a class="link" href="${esc(url)}" target="_blank" rel="noreferrer" title="${esc(url)}">${esc(shortUrl(url, raw))}</a>`;
     });
   }
+
+  // Не картинка / не загрузилась — заменяем превью на обычную ссылку
+  document.addEventListener('error', e => {
+    const el = e.target;
+    if (el.tagName === 'IMG' && el.classList.contains('linkpreview')) {
+      const a = document.createElement('a');
+      a.className = 'link';
+      a.href = el.dataset.href;
+      a.target = '_blank';
+      a.rel = 'noreferrer';
+      a.title = el.dataset.href;
+      a.textContent = el.dataset.short;
+      el.replaceWith(a);
+    }
+  }, true);
 
   function shortUrl(url, raw) {
     try {

@@ -128,6 +128,7 @@ public partial class MainWindow : Window
             _settings.TwitchRefreshToken = _auth.RefreshToken;
             StatusLabel.Text = $"Twitch: вошёл как {_auth.UserLogin}";
             TryStartEventSub();
+            UpdateSendPanel();
         }
     }
 
@@ -159,6 +160,7 @@ public partial class MainWindow : Window
             _settings.TwitchRefreshToken = _auth.RefreshToken;
             _settings.Save();
             TryStartEventSub();
+            UpdateSendPanel();
             return $"Вошёл как {_auth.UserLogin}";
         }
         catch (Exception ex)
@@ -177,10 +179,55 @@ public partial class MainWindow : Window
         _settings.TwitchAccessToken = "";
         _settings.TwitchRefreshToken = "";
         _settings.Save();
+        UpdateSendPanel();
     }
 
     /// <summary>Ник залогиненного пользователя (пусто = не авторизован).</summary>
     public string TwitchLoginName => _auth.IsLoggedIn ? _auth.UserLogin : "";
+
+    // ---------- Отправка сообщений ----------
+
+    /// <summary>Поле ввода видно, когда есть и логин, и подключение к каналу.</summary>
+    private void UpdateSendPanel() =>
+        SendPanel.Visibility = _auth.IsLoggedIn && _connected && !_compactMode
+            ? Visibility.Visible : Visibility.Collapsed;
+
+    private async void SendButton_Click(object sender, RoutedEventArgs e) => await SendMessageAsync();
+
+    private async void MessageBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            e.Handled = true;
+            await SendMessageAsync();
+        }
+    }
+
+    private async Task SendMessageAsync()
+    {
+        var text = MessageBox.Text.Trim();
+        if (text.Length == 0 || _currentRoomId.Length == 0) return;
+
+        SendButton.IsEnabled = false;
+        try
+        {
+            var error = await _auth.SendChatMessageAsync(_currentRoomId, text);
+            if (error == null)
+            {
+                MessageBox.Clear();
+                // Своё сообщение придёт обратно через IRC и появится в чате само
+            }
+            else
+            {
+                StatusLabel.Text = "Отправка: " + error;
+            }
+        }
+        finally
+        {
+            SendButton.IsEnabled = true;
+            MessageBox.Focus();
+        }
+    }
 
     // ---------- Чат-вью (WebView2) ----------
 
@@ -199,20 +246,59 @@ public partial class MainWindow : Window
             ChatView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
             ChatView.CoreWebView2.Settings.AreDevToolsEnabled = false;
             ChatView.ZoomFactor = _chatZoom;
+
+            // Если загрузка страницы не удалась (сервер ещё поднимается, транзиентная
+            // ошибка сети и т.п.) — раньше оставался пустой белый экран навсегда.
+            // Теперь пробуем снова каждые 2 секунды.
+            ChatView.CoreWebView2.NavigationCompleted += (_, args) =>
+            {
+                if (args.IsSuccess) return;
+                StatusLabel.Text = $"Чат не загрузился ({args.WebErrorStatus}) — повтор через 2 с…";
+                _ = Dispatcher.InvokeAsync(async () =>
+                {
+                    await Task.Delay(2000);
+                    if (_chatViewReady) ChatView.CoreWebView2.Reload();
+                });
+            };
+
+            // Упал процесс WebView2 (крайне редко) — переинициализируем целиком
+            ChatView.CoreWebView2.ProcessFailed += (_, _) =>
+            {
+                _chatViewReady = false;
+                _ = Dispatcher.InvokeAsync(async () =>
+                {
+                    await Task.Delay(1000);
+                    await InitChatViewAsync();
+                });
+            };
+
             ChatView.CoreWebView2.Navigate(_obs.Url.TrimEnd('/') + "/streamer");
             _chatViewReady = true;
         }
         catch (Exception ex)
         {
-            // Нет WebView2 Runtime (редкость: есть в Win11 и ставится с Edge)
+            // Нет WebView2 Runtime или папка данных занята (не успел умереть
+            // процесс прошлого запуска — бывает сразу после автообновления):
+            // пробуем ещё раз через 2 секунды, прежде чем сдаться.
+            if (_chatInitAttempts++ < 5)
+            {
+                StatusLabel.Text = "Чат: повторная инициализация…";
+                await Task.Delay(2000);
+                await InitChatViewAsync();
+                return;
+            }
+
             ChatView.Visibility = Visibility.Collapsed;
             ChatFallback.Visibility = Visibility.Visible;
             ChatFallback.Text =
-                "Для отображения чата нужен WebView2 Runtime.\n\n" +
-                "Установи его с developer.microsoft.com/microsoft-edge/webview2 и перезапусти приложение.\n\n" +
+                "Не удалось запустить встроенный браузер чата.\n\n" +
+                "Если это первый запуск — установи WebView2 Runtime " +
+                "(developer.microsoft.com/microsoft-edge/webview2) и перезапусти приложение.\n\n" +
                 "Ошибка: " + ex.Message;
         }
     }
+
+    private int _chatInitAttempts;
 
     /// <summary>Перезагрузка чат-вью (после смены лайаута).</summary>
     private void ReloadChatView()
@@ -343,9 +429,14 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            // Порт занят или HttpListener недоступен — работаем без оверлея
-            _settings.ObsServerEnabled = false;
-            StatusLabel.Text = "OBS-сервер не запустился: " + ex.Message;
+            // Порт занят (другое приложение) — чат в окне работать не сможет
+            StatusLabel.Text = "Сервер чата не запустился (порт 8085 занят?): " + ex.Message;
+            ChatView.Visibility = Visibility.Collapsed;
+            ChatFallback.Visibility = Visibility.Visible;
+            ChatFallback.Text =
+                "Не удалось запустить внутренний сервер чата.\n\n" +
+                "Возможно, порт 8085 занят другой программой или запущена вторая копия AvtomatChat.\n\n" +
+                "Ошибка: " + ex.Message;
         }
     }
 
@@ -587,6 +678,7 @@ public partial class MainWindow : Window
     private void SetConnectedState(bool connected)
     {
         _connected = connected;
+        UpdateSendPanel();
         ConnectButton.Content = connected ? "Отключиться" : "Подключиться";
         ChannelBox.IsEnabled = !connected;
     }
@@ -639,6 +731,7 @@ public partial class MainWindow : Window
         UpdateBanner.Visibility = compact ? Visibility.Collapsed :
             (_pendingUpdate != null ? Visibility.Visible : Visibility.Collapsed);
         ContentGrid.Margin = compact ? new Thickness(0) : new Thickness(12);
+        UpdateSendPanel();
         CompactButton.Content = compact ? "\uE8A1" : "\uE8A0"; // BackToWindow / FullScreen
         CompactButton.ToolTip = compact ? "Вернуть интерфейс" : "Только чат (компакт-режим)";
     }
@@ -756,6 +849,9 @@ public partial class MainWindow : Window
         Activate();
         if (_trayIcon != null) _trayIcon.Visible = false;
     }
+
+    /// <summary>Повторный запуск exe будит это окно (в т.ч. из трея).</summary>
+    public void ShowFromSecondInstance() => RestoreFromTray();
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {

@@ -82,6 +82,16 @@ public partial class SettingsWindow : Window
 
     private void TestButton_Click(object sender, RoutedEventArgs e) => _main.SpeakTestPhrase();
 
+    private CssHelpWindow? _cssHelp;
+
+    private void CssHelpButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_cssHelp != null) { _cssHelp.Activate(); return; }
+        _cssHelp = new CssHelpWindow(this);
+        _cssHelp.Closed += (_, _) => _cssHelp = null;
+        _cssHelp.Show();
+    }
+
     private async void CheckUpdatesButton_Click(object sender, RoutedEventArgs e)
         => await _main.CheckForUpdatesManualAsync();
 
