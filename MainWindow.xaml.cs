@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         {
             _currentRoomId = roomId;
             _ = _7tv.LoadChannelAsync(roomId); // эмоуты канала 7TV
+            Dispatcher.Invoke(TryStartEventSub); // фоловы/шаутауты/бейджи, если авторизованы
         };
         _irc.UserJoined += user => Dispatcher.Invoke(() => OnUserPresence(user, joined: true));
         _irc.UserLeft += user => Dispatcher.Invoke(() => OnUserPresence(user, joined: false));
@@ -96,7 +97,90 @@ public partial class MainWindow : Window
         // Проверка обновлений (в фоне, не мешает запуску)
         if (_settings.AutoUpdateCheck)
             _ = CheckForUpdatesAsync();
+
+        // Twitch OAuth (опционально): фоловы, шаутауты, канальные саб-бейджи
+        _auth.ClientId = string.IsNullOrWhiteSpace(_settings.TwitchClientId)
+            ? AppSettings.DefaultTwitchClientId : _settings.TwitchClientId;
+        _eventSub = new TwitchEventSub(_auth);
+        _eventSub.StatusChanged += s => Dispatcher.Invoke(() => StatusLabel.Text = s);
+        _eventSub.FollowReceived += name => Dispatcher.Invoke(() =>
+            OnAlert(new ChatMessage { Username = "💚", Text = $"{name} зафоловил канал!", IsAlert = true }));
+        _eventSub.ShoutoutSent += (to, viewers) => Dispatcher.Invoke(() =>
+            OnAlert(new ChatMessage { Username = "📣", Text = $"Шаутаут для {to}! Загляните: twitch.tv/{to.ToLowerInvariant()}", IsAlert = true }));
+        _eventSub.ShoutoutReceived += from => Dispatcher.Invoke(() =>
+            OnAlert(new ChatMessage { Username = "📣", Text = $"{from} дал шаутаут этому каналу!", IsAlert = true }));
+        if (_settings.TwitchAccessToken.Length > 0)
+            _ = RestoreTwitchSessionAsync();
     }
+
+    // ---------- Twitch OAuth ----------
+
+    private readonly TwitchAuth _auth = new();
+    private TwitchEventSub _eventSub = null!;
+    private string _eventSubRoomId = "";
+
+    private async Task RestoreTwitchSessionAsync()
+    {
+        var ok = await _auth.TryRestoreAsync(_settings.TwitchAccessToken, _settings.TwitchRefreshToken);
+        if (ok)
+        {
+            _settings.TwitchAccessToken = _auth.AccessToken;
+            _settings.TwitchRefreshToken = _auth.RefreshToken;
+            StatusLabel.Text = $"Twitch: вошёл как {_auth.UserLogin}";
+            TryStartEventSub();
+        }
+    }
+
+    /// <summary>Запускает EventSub и канальные бейджи, если есть авторизация и канал.</summary>
+    private void TryStartEventSub()
+    {
+        if (!_auth.IsLoggedIn || _currentRoomId.Length == 0) return;
+        if (_eventSub.IsConnected && _eventSubRoomId == _currentRoomId) return;
+        _eventSubRoomId = _currentRoomId;
+        _ = _eventSub.ConnectAsync(_currentRoomId);
+        _ = BadgeCatalog.LoadChannelAsync(_currentRoomId, _auth.AccessToken, _auth.ClientId);
+    }
+
+    /// <summary>Вход через Twitch (Device Code Flow) — вызывается из окна настроек.</summary>
+    public async Task<string> TwitchLoginAsync(Action<string> status)
+    {
+        try
+        {
+            var code = await _auth.StartDeviceFlowAsync();
+            status($"Код: {code.UserCode} — подтверди в браузере…");
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = code.VerificationUri,
+                UseShellExecute = true,
+            });
+
+            await _auth.WaitForTokenAsync(code, CancellationToken.None);
+            _settings.TwitchAccessToken = _auth.AccessToken;
+            _settings.TwitchRefreshToken = _auth.RefreshToken;
+            _settings.Save();
+            TryStartEventSub();
+            return $"Вошёл как {_auth.UserLogin}";
+        }
+        catch (Exception ex)
+        {
+            return "Ошибка: " + ex.Message;
+        }
+    }
+
+    /// <summary>Выход из Twitch-аккаунта.</summary>
+    public void TwitchLogout()
+    {
+        _auth.Logout();
+        _eventSub.Disconnect();
+        _eventSubRoomId = "";
+        BadgeCatalog.ClearChannel();
+        _settings.TwitchAccessToken = "";
+        _settings.TwitchRefreshToken = "";
+        _settings.Save();
+    }
+
+    /// <summary>Ник залогиненного пользователя (пусто = не авторизован).</summary>
+    public string TwitchLoginName => _auth.IsLoggedIn ? _auth.UserLogin : "";
 
     // ---------- Чат-вью (WebView2) ----------
 
@@ -299,6 +383,13 @@ public partial class MainWindow : Window
         w.VolumeLabel.Text = ((int)w.VolumeSlider.Value).ToString();
         w.ShowJoinsLocalCheck.IsChecked = _settings.ShowJoinsLocal;
         w.ShowJoinsObsCheck.IsChecked = _settings.ShowJoinsObs;
+        w.TranslateCheck.IsChecked = _settings.TranslateChat;
+        w.CloseBehaviorCombo.SelectedIndex = _settings.CloseBehavior switch
+        {
+            "tray" => 1,
+            "exit" => 2,
+            _ => 0, // ask
+        };
         w.ObsUrlBox.Text = _obs.Url;
         w.AutoUpdateCheck.IsChecked = _settings.AutoUpdateCheck;
         w.VersionLabel.Text = $"Текущая версия: {UpdateService.CurrentVersionText}";
@@ -345,6 +436,13 @@ public partial class MainWindow : Window
         _settings.Volume = (int)w.VolumeSlider.Value;
         _settings.ShowJoinsLocal = w.ShowJoinsLocalCheck.IsChecked == true;
         _settings.ShowJoinsObs = w.ShowJoinsObsCheck.IsChecked == true;
+        _settings.TranslateChat = w.TranslateCheck.IsChecked == true;
+        _settings.CloseBehavior = w.CloseBehaviorCombo.SelectedIndex switch
+        {
+            1 => "tray",
+            2 => "exit",
+            _ => "ask",
+        };
         _obs.ShowJoinsLocal = _settings.ShowJoinsLocal;
         _obs.ShowJoinsObs = _settings.ShowJoinsObs;
         _settings.AutoUpdateCheck = w.AutoUpdateCheck.IsChecked == true;
@@ -408,6 +506,26 @@ public partial class MainWindow : Window
 
         _obs.AddMessage(msg); // единое хранилище: окно стримера и OBS читают отсюда
         _tts.EnqueueMessage(msg);
+
+        // Перевод EN→RU для окна стримера (в фоне; оверлей перевод не показывает)
+        // Перевод EN→RU для окна стримера (в фоне; оверлей перевод не показывает).
+        // Переводим только текстовые части — имена эмоутов (kanangBuhCursed и т.п.)
+        // не текст, переводчик на них галлюцинирует.
+        if (_settings.TranslateChat)
+        {
+            var textOnly = msg.Parts != null
+                ? string.Concat(msg.Parts.Where(p => p.Emote == null).Select(p => p.Text)).Trim()
+                : msg.Text;
+
+            if (textOnly.Length > 0 && TranslationService.LooksEnglish(textOnly))
+            {
+                _ = Task.Run(async () =>
+                {
+                    var tr = await TranslationService.TranslateAsync(textOnly);
+                    if (tr != null) msg.Translation = tr; // объект общий — чат-вью подхватит при следующем опросе
+                });
+            }
+        }
     }
 
     /// <summary>Событие входа/выхода зрителя (JOIN/PART из IRC).</summary>
@@ -448,6 +566,8 @@ public partial class MainWindow : Window
         try
         {
             _7tv.ClearChannelEmotes(); // эмоуты прошлого канала больше не нужны
+            BadgeCatalog.ClearChannel(); // и его канальные бейджи
+            _eventSubRoomId = ""; // EventSub переподключится на новый канал
             await _irc.ConnectAsync(channel);
             SetConnectedState(true);
             _settings.Channel = channel;
@@ -639,13 +759,35 @@ public partial class MainWindow : Window
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        // Подключены к чату и это не «Выход» из трея — сворачиваемся в трей,
-        // чтобы случайный крестик не убил озвучку и оверлей посреди стрима
+        // Подключены к чату и это не «Выход» из трея — спрашиваем (или действуем по запомненному выбору)
         if (_connected && !_reallyClosing)
         {
-            e.Cancel = true;
-            HideToTray();
-            return;
+            var behavior = _settings.CloseBehavior;
+            if (behavior == "ask")
+            {
+                var dlg = new CloseDialog(this);
+                dlg.ShowDialog();
+
+                if (dlg.Result == CloseDialog.Choice.Cancel)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+                if (dlg.Remember)
+                {
+                    _settings.CloseBehavior = dlg.Result == CloseDialog.Choice.Tray ? "tray" : "exit";
+                    _settings.Save();
+                }
+                behavior = dlg.Result == CloseDialog.Choice.Tray ? "tray" : "exit";
+            }
+
+            if (behavior == "tray")
+            {
+                e.Cancel = true;
+                HideToTray();
+                return;
+            }
+            // behavior == "exit" — продолжаем обычное закрытие
         }
 
         if (_trayIcon != null)
@@ -656,10 +798,13 @@ public partial class MainWindow : Window
         _settingsWindow?.Close();
         _settings.Channel = ChannelBox.Text.Trim();
         _settings.ChatZoom = _chatZoom;
+        _settings.TwitchAccessToken = _auth.AccessToken;
+        _settings.TwitchRefreshToken = _auth.RefreshToken;
         _settings.Save();
         _queueTimer.Stop();
         _irc.Dispose();
         _tts.Dispose();
         _obs.Dispose();
+        _eventSub.Dispose();
     }
 }

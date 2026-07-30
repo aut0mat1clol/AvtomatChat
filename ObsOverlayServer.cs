@@ -215,6 +215,7 @@ public class ObsOverlayServer : IDisposable
                             t = m.Text,
                             c = m.ColorHex,
                             ts = streamer ? m.TimeString : null, // время — только стримеру
+                            tr = streamer ? m.Translation : null, // перевод — только стримеру
                             ct = new DateTimeOffset(m.Time).ToUnixTimeMilliseconds(), // для fade
                             sys = m.IsSystem, // системное событие (зашёл/вышел)
                             al = m.IsAlert,   // алерт (саб/рейд)
@@ -374,6 +375,13 @@ public class ObsOverlayServer : IDisposable
   }
   /* Стримерский режим: время и удалённые с содержимым */
   .msg .time { color: #7a7a85; font-size: 0.75em; }
+  /* Перевод сообщения (только в окне стримера) */
+  .msg .translation {
+    color: #9a9aa5;
+    font-style: italic;
+    font-size: 0.85em;
+    margin: 1px 0 0 14px;
+  }
   .msg.deleted-full { color: #7a7a85; }
   .msg.deleted-full s { color: #7a7a85; }
   .msg.deleted-full em { font-size: 0.85em; }
@@ -461,12 +469,13 @@ public class ObsOverlayServer : IDisposable
   function buildHtml(m) {
     const time = (MODE === 'streamer' && m.ts) ? `<span class="time">${esc(m.ts)}</span> ` : '';
     const badges = (m.b || []).map(u => `<img class="badge" src="${esc(u)}">`).join('');
+    const tr = (MODE === 'streamer' && m.tr) ? `<div class="translation">→ ${esc(m.tr)}</div>` : '';
     if (m.del)
       return `${time}${badges}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: <s>${renderBody(m)}</s> <em>— Deleted</em>`;
     if (m.al)  return `${time}${esc(m.u)} ${esc(m.t)}`;
     if (m.sys) return `${time}${esc(m.u)} ${esc(m.t)}`;
-    if (m.me)  return `${time}${badges}<span class="me" style="color:${esc(m.c)}"><span class="nick">${esc(m.u)}</span> ${renderBody(m)}</span>`;
-    return `${time}${badges}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: ${renderBody(m)}`;
+    if (m.me)  return `${time}${badges}<span class="me" style="color:${esc(m.c)}"><span class="nick">${esc(m.u)}</span> ${renderBody(m)}</span>${tr}`;
+    return `${time}${badges}<span class="nick" style="color:${esc(m.c)}">${esc(m.u)}</span>: ${renderBody(m)}${tr}`;
   }
 
   function msgClass(m) {
@@ -510,6 +519,7 @@ public class ObsOverlayServer : IDisposable
         el.className = cls + ' appearing';
         el.dataset.id = String(m.id);
         el.innerHTML = html;
+        el.dataset.html = html;
         // Вставляем после prev (сохраняем порядок), иначе в конец
         if (prev && prev.nextSibling) chat.insertBefore(el, prev.nextSibling);
         else chat.appendChild(el);

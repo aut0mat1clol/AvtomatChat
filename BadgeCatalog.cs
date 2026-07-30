@@ -69,14 +69,55 @@ public static class BadgeCatalog
         }
     }
 
+    /// <summary>
+    /// Канальные бейджи (уникальные саб-бейджи с месяцами, bits) через Helix.
+    /// Требует OAuth-токен (любого залогиненного пользователя). Канальные версии
+    /// перекрывают глобальные для этого канала.
+    /// </summary>
+    public static async Task LoadChannelAsync(string broadcasterId, string accessToken, string clientId)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get,
+                $"https://api.twitch.tv/helix/chat/badges?broadcaster_id={broadcasterId}");
+            req.Headers.Add("Authorization", "Bearer " + accessToken);
+            req.Headers.Add("Client-Id", clientId);
+
+            var resp = await Http.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return;
+
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            foreach (var set in doc.RootElement.GetProperty("data").EnumerateArray())
+            {
+                var setId = set.GetProperty("set_id").GetString();
+                if (string.IsNullOrEmpty(setId)) continue;
+
+                foreach (var ver in set.GetProperty("versions").EnumerateArray())
+                {
+                    var verId = ver.GetProperty("id").GetString() ?? "1";
+                    var url = ver.GetProperty("image_url_2x").GetString();
+                    if (!string.IsNullOrEmpty(url))
+                        ChannelByVersion[$"{setId}/{verId}"] = url;
+                }
+            }
+        }
+        catch { /* без канальных бейджей — останутся глобальные */ }
+    }
+
+    /// <summary>Сброс канальных бейджей (при смене канала).</summary>
+    public static void ClearChannel() => ChannelByVersion.Clear();
+
+    // Канальные версии (приоритетнее глобальных)
+    private static readonly ConcurrentDictionary<string, string> ChannelByVersion = new();
+
     /// <summary>URL картинки бейджа по "set/version" из тега badges, либо null.</summary>
     public static string? Resolve(string setId, string version)
     {
-        // Полный каталог: точная версия -> первая версия набора
-        if (ByVersion.TryGetValue($"{setId}/{version}", out var url)) return url;
+        // Канальные (уникальные саб/bits) -> глобальный каталог -> встроенный минимум
+        if (ChannelByVersion.TryGetValue($"{setId}/{version}", out var url)) return url;
+        if (ByVersion.TryGetValue($"{setId}/{version}", out url)) return url;
         if (BySet.TryGetValue(setId, out url)) return url;
 
-        // Встроенный минимум
         return Builtin.TryGetValue(setId, out var guid)
             ? $"https://static-cdn.jtvnw.net/badges/v1/{guid}/2"
             : null;

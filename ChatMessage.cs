@@ -17,6 +17,9 @@ public class ChatMessage
     /// <summary>ID сообщения из тега id (для удаления по CLEARMSG).</summary>
     public string? MsgId { get; set; }
 
+    /// <summary>Перевод на русский (для окна стримера). Заполняется асинхронно.</summary>
+    public string? Translation { get; set; }
+
     /// <summary>URL картинок бейджей (модер, VIP, саб и т.д.) — слева от ника.</summary>
     public List<string>? Badges { get; set; }
 

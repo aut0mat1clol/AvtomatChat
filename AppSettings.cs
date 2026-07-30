@@ -38,6 +38,9 @@ public class AppSettings
     // Интерфейс
     public double ChatZoom { get; set; } = 1.0;
 
+    /// <summary>Что делать при закрытии окна с активным чатом: ask / tray / exit.</summary>
+    public string CloseBehavior { get; set; } = "ask";
+
     /// <summary>Подсказка о сворачивании в трей уже показана.</summary>
     public bool TrayTipShown { get; set; }
 
@@ -46,6 +49,16 @@ public class AppSettings
     public bool ShowJoinsLocal { get; set; }
     /// <summary>Показывать «зашёл/вышел» ещё и в OBS-оверлее.</summary>
     public bool ShowJoinsObs { get; set; }
+
+    /// <summary>Переводить английские сообщения на русский (в окне стримера).</summary>
+    public bool TranslateChat { get; set; }
+
+    // Twitch-аккаунт (опционально: фоловы, шаутауты, канальные саб-бейджи)
+    /// <summary>Client ID Twitch-приложения. По умолчанию — приложение AvtomatChat.</summary>
+    public string TwitchClientId { get; set; } = DefaultTwitchClientId;
+    public const string DefaultTwitchClientId = "xk0ck5btzbol3y059onjw20mlf4vn6";
+    public string TwitchAccessToken { get; set; } = "";
+    public string TwitchRefreshToken { get; set; } = "";
 
     // Обновления
     /// <summary>Проверять обновления на GitHub при запуске.</summary>
